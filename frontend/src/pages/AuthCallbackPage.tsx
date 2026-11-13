@@ -32,8 +32,6 @@ export function AuthCallbackPage() {
     let active = true;
 
     async function confirmEmail(): Promise<CallbackState> {
-      if (!isSupabaseConfigured || !supabase) return "failure";
-
       const callbackUrl = new URL(window.location.href);
       const callbackError = callbackParameter(callbackUrl, "error");
       const callbackErrorCode = callbackParameter(callbackUrl, "error_code");
@@ -45,10 +43,12 @@ export function AuthCallbackPage() {
       const refreshToken = hashParameters.get("refresh_token");
 
       clearCallbackParameters();
+      if (!isSupabaseConfigured || !supabase) return "failure";
 
       if (callbackError || callbackErrorCode || callbackErrorDescription) return "invalid";
 
       try {
+        let token: string | undefined;
         if (authorizationCode) {
           const { data, error } = await supabase.auth.exchangeCodeForSession(
             authorizationCode,
@@ -56,6 +56,7 @@ export function AuthCallbackPage() {
           );
           if (error) throw error;
           if (!data.session) return "invalid";
+          token = data.session.access_token;
         } else if (accessToken && refreshToken) {
           const { data, error } = await supabase.auth.setSession({
             access_token: accessToken,
@@ -63,13 +64,17 @@ export function AuthCallbackPage() {
           });
           if (error) throw error;
           if (!data.session) return "invalid";
+          token = data.session.access_token;
         } else {
           const { data, error } = await supabase.auth.getSession();
           if (error) throw error;
           if (!data.session) return "invalid";
+          token = data.session.access_token;
         }
 
-        return "success";
+        if (!token) return "invalid";
+        const verified = await supabase.auth.getUser(token);
+        return verified.error || !verified.data.user ? "invalid" : "success";
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         return isInvalidConfirmationError(message) ? "invalid" : "failure";

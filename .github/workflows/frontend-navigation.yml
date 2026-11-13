@@ -27,6 +27,7 @@ jobs:
         run: npm run preview:index
         working-directory: frontend
         env:
+          PREVIEW_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           PREVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Publish dashboard screenshot gallery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

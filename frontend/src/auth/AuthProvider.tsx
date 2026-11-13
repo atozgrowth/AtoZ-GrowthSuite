@@ -11,7 +11,7 @@ export interface AuthContextValue {
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 async function verifiedSession(next: Session | null): Promise<Session | null> {
-  if (!next || !supabase) return null;
+  if (!next?.access_token || !supabase) return null;
   // Cached session metadata is not an authorization source. Validate with Auth.
   const { data, error } = await supabase.auth.getUser(next.access_token);
   if (error || !data.user) return null;
@@ -23,8 +23,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
     let active = true, generation = 0, observedEvent = false;
-    async function restore(next: Session | null) {
-      const current = ++generation;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    async function restore(next: Session | null, current = ++generation) {
       setLoading(true);
       try {
         const verified = await verifiedSession(next);
@@ -36,14 +36,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+      if (!active) return;
       observedEvent = true;
-      // Leave the auth callback before making another Supabase call.
-      queueMicrotask(() => { if (active) void restore(next); });
+      // Invalidate older verification immediately, including a cross-tab logout.
+      const current = ++generation;
+      setSession(null); setLoading(Boolean(next));
+      if (!next) return;
+      // Leave Supabase's callback/lock before making another Auth call.
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        if (active && current === generation) void restore(next, current);
+      }, 0);
+      timers.add(timer);
     });
     void supabase.auth.getSession().then(({ data: initial, error }) => {
       if (active && !observedEvent) void restore(error ? null : initial.session);
     }).catch(() => { if (active && !observedEvent) void restore(null); });
-    return () => { active = false; generation++; data.subscription.unsubscribe(); };
+    return () => { active = false; generation++; data.subscription.unsubscribe(); timers.forEach(clearTimeout); };
   }, []);
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) throw new Error("Authentication is not available. Please try again later.");
@@ -65,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { status: data.user?.identities?.length === 0 ? "existing-account" : "confirmation-required" };
   }, []);
   const signOut = useCallback(async () => {
-    if (supabase) { const { error } = await supabase.auth.signOut(); if (error) throw error; }
+    if (supabase) { const { error } = await supabase.auth.signOut({ scope: "local" }); if (error) throw error; }
     setSession(null);
   }, []);
   const value = useMemo(() => ({ session, user: session?.user ?? null, loading, configured: isSupabaseConfigured, signIn, signUp, signOut }), [session, loading, signIn, signUp, signOut]);

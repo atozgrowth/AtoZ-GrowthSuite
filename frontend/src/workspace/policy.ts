@@ -6,7 +6,7 @@ export function workspacePath(userId: string, page = "dashboard") {
 }
 export function safeDestination(value: unknown) {
   if (typeof value !== "string" || /[\\?#\s]/.test(value)) return "/dashboard";
-  return /^\/(workspace\/[^/]+\/(dashboard|wordpress|account|modules\/[a-z-]+)|admin|dashboard|wordpress|account)$/.test(value) ? value : "/dashboard";
+  return /^\/(workspace\/[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}\/(dashboard|wordpress|account|modules\/[a-z-]+)|admin|dashboard|wordpress|account)$/.test(value) ? value : "/dashboard";
 }
 export const modules = [
   { id: "analytics", name: "Analytics", description: "Understand performance across your digital properties.", detail: "Reporting pipelines and metric collection are not connected yet." },

@@ -22,7 +22,7 @@ test("password login restores the intended workspace and navigation works", asyn
   await signIn(page); await expect(page).toHaveURL(root + "/account");
   await page.getByRole("link", { name: "Overview", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Welcome back, Jamie." })).toBeVisible();
-  await expect(page.getByText("https://store.example.test", { exact: true })).toBeVisible();
+  await expect(page.getByText("https://store.example.test/", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Admin overview" })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("customer-dashboard.png"), fullPage: true });
   await page.getByRole("link", { name: "Billing Unavailable", exact: true }).click();
