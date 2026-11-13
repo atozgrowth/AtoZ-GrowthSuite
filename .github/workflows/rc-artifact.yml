@@ -62,6 +62,15 @@ jobs:
           overwrite: false
           retention-days: 30
           compression-level: 0
+      - name: Download the stored artifact for round-trip verification
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: rc-v2026.11.14-rc.1-4cdf318-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc-downloaded
+      - name: Verify downloaded contents against the pre-upload checksums
+        run: |
+          cmp "$RUNNER_TEMP/rc-output/SHA256SUMS" "$RUNNER_TEMP/rc-downloaded/SHA256SUMS"
+          python3 scripts/rc/verify.py "$RUNNER_TEMP/rc-downloaded" --expected-source "$RC_SOURCE_SHA"
       - name: Record delivery identity
         env:
           ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
