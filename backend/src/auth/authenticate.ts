@@ -1,63 +1,33 @@
-import { FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyRequest, FastifyReply } from "fastify";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const url = process.env.SUPABASE_URL;
+const key = process.env.SUPABASE_ANON_KEY;
+if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env");
+const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env");
+export interface VerifiedUser {
+  id: string;
+  email?: string;
+  app_metadata?: Record<string, unknown>;
 }
+export type AuthenticatedRequest = FastifyRequest & { user?: VerifiedUser; accessToken?: string };
+type Lookup = (token: string) => Promise<{ data: { user: VerifiedUser | null }; error: unknown }>;
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
-
-export type AuthenticatedRequest = FastifyRequest & {
-  user?: {
-    id: string;
-    email?: string;
+/** Only the Auth server response supplies identity and authorization metadata. */
+export function createAuthenticate(lookup: Lookup) {
+  return async (request: AuthenticatedRequest, reply: FastifyReply) => {
+    const header = request.headers.authorization;
+    const token = header?.match(/^Bearer\s+(\S+)$/i)?.[1];
+    if (!token) return reply.code(401).send({ success: false, message: "Authorization token is required." });
+    try {
+      const { data, error } = await lookup(token);
+      if (error || !data.user) return reply.code(401).send({ success: false, message: "Invalid or expired access token." });
+      request.user = { id: data.user.id, email: data.user.email, app_metadata: data.user.app_metadata };
+      request.accessToken = token;
+    } catch {
+      return reply.code(503).send({ success: false, message: "Authentication is temporarily unavailable." });
+    }
   };
-  accessToken?: string;
-};
-
-export async function authenticate(
-  request: AuthenticatedRequest,
-  reply: FastifyReply
-) {
-  const authorization = request.headers.authorization;
-
-  if (!authorization || !authorization.startsWith("Bearer ")) {
-    return reply.code(401).send({
-      success: false,
-      message: "Authorization token is required.",
-    });
-  }
-
-  const accessToken = authorization.replace("Bearer ", "").trim();
-
-  if (!accessToken) {
-    return reply.code(401).send({
-      success: false,
-      message: "Invalid authorization token.",
-    });
-  }
-
-  const { data, error } = await supabase.auth.getUser(accessToken);
-
-  if (error || !data.user) {
-    return reply.code(401).send({
-      success: false,
-      message: "Invalid or expired access token.",
-    });
-  }
-
-  request.user = {
-    id: data.user.id,
-    email: data.user.email,
-  };
-
-  request.accessToken = accessToken;
 }
+export const authenticate = createAuthenticate(token => supabase.auth.getUser(token));

@@ -81,7 +81,7 @@ export function AuthCallbackPage() {
       if (!active) return;
       setState(nextState);
       if (nextState === "success") {
-        redirectTimer = window.setTimeout(() => navigate("/wordpress", { replace: true }), 1200);
+        redirectTimer = window.setTimeout(() => navigate("/dashboard", { replace: true }), 1200);
       }
     });
 
@@ -106,7 +106,7 @@ export function AuthCallbackPage() {
           <>
             <div className="callback-status success" aria-hidden="true">✓</div>
             <h1>Email verified</h1>
-            <p>Your account is ready. We’re taking you to WordPress Manager now.</p>
+            <p>Your account is ready. We’re taking you to your workspace now.</p>
           </>
         )}
         {state === "invalid" && (
@@ -114,7 +114,7 @@ export function AuthCallbackPage() {
             <div className="callback-status error" aria-hidden="true">!</div>
             <h1>Confirmation link expired or invalid</h1>
             <p>This link may have expired or already been used. Return to account creation and sign up again to receive a fresh confirmation email.</p>
-            <Link className="button primary" to="/login">Return to account creation</Link>
+            <Link className="button primary" to="/signup">Return to account creation</Link>
           </>
         )}
         {state === "failure" && (

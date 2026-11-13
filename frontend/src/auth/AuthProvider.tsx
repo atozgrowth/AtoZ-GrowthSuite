@@ -1,14 +1,73 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
-export type SignUpResult={status:"authenticated"|"confirmation-required"|"existing-account"};
-export interface AuthContextValue { session:Session|null; user:User|null; loading:boolean; configured:boolean; signIn:(email:string,password:string)=>Promise<void>; signUp:(email:string,password:string)=>Promise<SignUpResult>; signOut:()=>Promise<void>; }
-export const AuthContext=createContext<AuthContextValue|undefined>(undefined);
-export function AuthProvider({children}:{children:ReactNode}){
- const[session,setSession]=useState<Session|null>(null);const[loading,setLoading]=useState(isSupabaseConfigured);
- useEffect(()=>{if(!supabase){setLoading(false);return}let active=true;void supabase.auth.getSession().then(({data,error})=>{if(!active)return;if(error)console.error("Unable to restore session",error.message);setSession(data.session??null);setLoading(false)});const{data}=supabase.auth.onAuthStateChange((_event,next)=>{setSession(next);setLoading(false)});return()=>{active=false;data.subscription.unsubscribe()}},[]);
- const signIn=useCallback(async(email:string,password:string)=>{if(!supabase)throw new Error("Supabase is not configured for this frontend.");const{data,error}=await supabase.auth.signInWithPassword({email,password});if(error)throw error;setSession(data.session)},[]);
- const signUp=useCallback(async(email:string,password:string):Promise<SignUpResult>=>{if(!supabase)throw new Error("Supabase is not configured for this frontend.");const emailRedirectTo=new URL("/auth/callback",window.location.origin).toString();const{data,error}=await supabase.auth.signUp({email,password,options:{emailRedirectTo}});if(error)throw error;if(data.session){setSession(data.session);return{status:"authenticated"}}if(data.user&&Array.isArray(data.user.identities)&&data.user.identities.length===0)return{status:"existing-account"};return{status:"confirmation-required"}},[]);
- const signOut=useCallback(async()=>{if(!supabase)return;const{error}=await supabase.auth.signOut();if(error)throw error},[]);
- const value=useMemo(()=>({session,user:session?.user??null,loading,configured:isSupabaseConfigured,signIn,signUp,signOut}),[session,loading,signIn,signUp,signOut]);return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+export type SignUpResult = { status: "authenticated" | "confirmation-required" | "existing-account" };
+export interface AuthContextValue {
+  session: Session | null; user: User | null; loading: boolean; configured: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<SignUpResult>;
+  signOut: () => Promise<void>;
+}
+export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+async function verifiedSession(next: Session | null): Promise<Session | null> {
+  if (!next || !supabase) return null;
+  // Cached session metadata is not an authorization source. Validate with Auth.
+  const { data, error } = await supabase.auth.getUser(next.access_token);
+  if (error || !data.user) return null;
+  return { ...next, user: data.user };
+}
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(isSupabaseConfigured);
+  useEffect(() => {
+    if (!supabase) { setLoading(false); return; }
+    let active = true, generation = 0, observedEvent = false;
+    async function restore(next: Session | null) {
+      const current = ++generation;
+      setLoading(true);
+      try {
+        const verified = await verifiedSession(next);
+        if (active && current === generation) setSession(verified);
+      } catch {
+        if (active && current === generation) setSession(null);
+      } finally {
+        if (active && current === generation) setLoading(false);
+      }
+    }
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+      observedEvent = true;
+      // Leave the auth callback before making another Supabase call.
+      queueMicrotask(() => { if (active) void restore(next); });
+    });
+    void supabase.auth.getSession().then(({ data: initial, error }) => {
+      if (active && !observedEvent) void restore(error ? null : initial.session);
+    }).catch(() => { if (active && !observedEvent) void restore(null); });
+    return () => { active = false; generation++; data.subscription.unsubscribe(); };
+  }, []);
+  const signIn = useCallback(async (email: string, password: string) => {
+    if (!supabase) throw new Error("Authentication is not available. Please try again later.");
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    const next = await verifiedSession(data.session);
+    if (!next) throw new Error("We could not verify your session. Please try again.");
+    // Session state is owned by the versioned auth-event restoration above.
+  }, []);
+  const signUp = useCallback(async (email: string, password: string): Promise<SignUpResult> => {
+    if (!supabase) throw new Error("Authentication is not available. Please try again later.");
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: new URL("/auth/callback", window.location.origin).toString() } });
+    if (error) throw error;
+    if (data.session) {
+      const next = await verifiedSession(data.session);
+      if (!next) throw new Error("We could not verify your session. Please sign in again.");
+      return { status: "authenticated" };
+    }
+    return { status: data.user?.identities?.length === 0 ? "existing-account" : "confirmation-required" };
+  }, []);
+  const signOut = useCallback(async () => {
+    if (supabase) { const { error } = await supabase.auth.signOut(); if (error) throw error; }
+    setSession(null);
+  }, []);
+  const value = useMemo(() => ({ session, user: session?.user ?? null, loading, configured: isSupabaseConfigured, signIn, signUp, signOut }), [session, loading, signIn, signUp, signOut]);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

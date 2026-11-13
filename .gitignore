@@ -68,3 +68,8 @@ wp-manager-plugin/**/*.zip
 Thumbs.db
 .vscode/
 .idea/
+
+# Browser test output
+**/playwright-report/
+**/test-results/
+**/preview-screenshots/

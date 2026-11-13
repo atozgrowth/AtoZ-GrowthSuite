@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { registerWorkspaceRoutes } from "./workspace/routes.js";
 import Fastify, { FastifyReply, FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -49,6 +50,7 @@ async function start() {
   await app.register(helmet);
 
   await registerWpManagerRoutes(app);
+  await registerWorkspaceRoutes(app);
 
   app.get("/health", async () => {
     return {

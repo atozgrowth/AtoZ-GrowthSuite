@@ -7,7 +7,9 @@
     "test": "node --test test/*.test.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "node scripts/clean-previews.mjs && playwright test",
+    "preview:index": "node scripts/preview-index.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
@@ -19,6 +21,7 @@
     "vite": "^7.3.8"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6"
   }
