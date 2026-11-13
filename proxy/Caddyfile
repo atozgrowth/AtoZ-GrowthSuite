@@ -1,0 +1,7 @@
+atozgrowth.net, www.atozgrowth.net {
+    respond "AtoZ Growth reverse proxy is running." 200
+}
+
+api.atozgrowth.net {
+    reverse_proxy atoz_backend:3000
+}

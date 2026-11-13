@@ -1,0 +1,1 @@
+import { Link } from "react-router-dom"; export function NotFoundPage(){return <main className="not-found"><span className="eyebrow">404</span><h1>Page not found</h1><p>The page you requested doesn’t exist.</p><Link className="button primary" to="/dashboard">Back to dashboard</Link></main>}

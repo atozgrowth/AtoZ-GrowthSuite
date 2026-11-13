@@ -1,0 +1,70 @@
+# Environment and local configuration
+.env
+.env.*
+*.local
+*.local.*
+.envrc
+.npmrc
+.netrc
+
+# Credentials, secrets, private keys, and certificates
+secrets/
+credentials/
+*.pem
+*.key
+*.ppk
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+.ssh/
+.aws/
+
+# Dependencies
+**/node_modules/
+**/vendor/
+**/.pnpm-store/
+
+# Generated builds, caches, and test output
+**/dist/
+**/build/
+**/coverage/
+**/.vite/
+**/.cache/
+**/.next/
+**/.turbo/
+**/*.tsbuildinfo
+
+# Logs and local runtime state
+*.log
+logs/
+tmp/
+temp/
+proxy/caddy_data/
+proxy/caddy_config/
+**/supabase/.temp/
+**/supabase/.branches/
+**/.supabase/
+
+# Archives, backups, and database dumps
+atoz-source-snapshot.tar.gz
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.bak
+*.backup
+*.dump
+*.sql.gz
+
+# Generated WordPress plugin packages
+wp-manager-plugin/**/*.zip
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
