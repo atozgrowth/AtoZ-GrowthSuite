@@ -74,6 +74,7 @@ Rollback for an unsuccessful SSH hardening change is performed from the still-op
 - The backend Compose definition adds a read-only root filesystem, temporary filesystem, dropped Linux capabilities, no-new-privileges, process/memory/CPU limits, health checks, and revision labels.
 - The proxy Compose definition adds an internal `atoz_frontend` service. The future Caddyfile routes `atozgrowth.net` and `www.atozgrowth.net` to it, while preserving the API route to `atoz_backend`.
 - The frontend container is static, listens only on the internal Docker network, and supports single-page-app route fallback.
+- The frontend image receives only `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_API_BASE_URL` as build arguments. These are public frontend values; `.env` files are excluded from the Docker build context. Never pass a service-role key or any private credential as a frontend build argument.
 
 Before any future use, validate locally and in a disposable environment:
 

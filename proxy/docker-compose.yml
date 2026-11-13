@@ -20,6 +20,10 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?Public Supabase URL required for frontend build}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:?Public Supabase anon key required for frontend build}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
     container_name: atoz_frontend
     restart: unless-stopped
     init: true

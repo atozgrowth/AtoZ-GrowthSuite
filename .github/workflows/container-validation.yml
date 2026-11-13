@@ -1,0 +1,75 @@
+name: Container validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hardened-runtime:
+    runs-on: ubuntu-latest
+    env:
+      # Deliberately synthetic fixtures. This workflow has no environment,
+      # repository secrets, SSH material, or deployment step.
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_ANON_KEY: test-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_ANON_KEY: test-anon-key
+      VITE_API_BASE_URL: /api
+      DEPLOY_REVISION: ci-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Build and validate backend Compose configuration
+        run: |
+          set -euo pipefail
+          cat > backend/.env <<'EOF'
+          SUPABASE_URL=https://example.supabase.co
+          SUPABASE_ANON_KEY=test-anon-key
+          SUPABASE_SERVICE_ROLE_KEY=
+          PORT=3000
+          HOST=0.0.0.0
+          EOF
+          docker network create atoz_net
+          docker compose -f backend/docker-compose.yml config
+          docker compose -f backend/docker-compose.yml up --build --wait --wait-timeout 120
+
+      - name: Assert backend hardening and health
+        run: |
+          set -euo pipefail
+          test "$(docker inspect --format '{{.State.Health.Status}}' atoz_backend)" = healthy
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' atoz_backend)" = true
+          test "$(docker inspect --format '{{.Config.User}}' atoz_backend)" = node
+          docker inspect --format '{{json .HostConfig.CapDrop}}' atoz_backend | grep -qx '["ALL"]'
+          docker inspect --format '{{json .HostConfig.SecurityOpt}}' atoz_backend | grep -q 'no-new-privileges:true'
+          test "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' atoz_backend)" = "$DEPLOY_REVISION"
+          test "$(docker exec atoz_backend id -u)" -ne 0
+          docker exec atoz_backend node -e "fetch('http://127.0.0.1:3000/health').then(async response => { if (!response.ok || (await response.json()).status !== 'running') process.exit(1); })"
+
+      - name: Validate Caddy and the frontend container
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$GITHUB_WORKSPACE/proxy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+          docker compose -f proxy/docker-compose.yml config
+          docker compose -f proxy/docker-compose.yml up --build --wait --wait-timeout 120 frontend
+          test "$(docker inspect --format '{{.State.Health.Status}}' atoz_frontend)" = healthy
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' atoz_frontend)" = true
+          test "$(docker exec atoz_frontend id -u)" -ne 0
+          docker exec atoz_frontend wget -qO- http://127.0.0.1:8080/healthz | grep -qx ok
+          docker exec atoz_frontend wget -qO- http://127.0.0.1:8080/dashboard | grep -q '<div id="root"></div>'
+
+      - name: Clean up test containers and synthetic fixture
+        if: always()
+        run: |
+          docker rm -f atoz_frontend atoz_caddy atoz_backend || true
+          docker compose -f proxy/docker-compose.yml down --remove-orphans --volumes || true
+          docker compose -f backend/docker-compose.yml down --remove-orphans --volumes || true
+          docker network rm atoz_net || true
+          rm -f backend/.env
