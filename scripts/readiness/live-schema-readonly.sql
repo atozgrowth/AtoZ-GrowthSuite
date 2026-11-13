@@ -23,3 +23,17 @@ SELECT p.proname,p.proargnames[1:p.pronargs] AS arguments,p.prosecdef AS securit
 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
 WHERE n.nspname='public' AND p.proname IN ('wp_manager_create_pairing_challenge','wp_manager_confirm_pairing_challenge','wp_manager_create_action_request','wp_manager_get_action_payload','wp_manager_approve_action_request','wp_manager_cancel_action_request');
 ROLLBACK;
+
+-- Additional bounded privilege evidence; no destructive proof of concept.
+BEGIN READ ONLY;
+SET LOCAL statement_timeout = '10s';
+SELECT r.rolname AS browser_role,
+       pg_catalog.has_table_privilege(r.oid,'public.profiles','TRUNCATE') AS can_truncate,
+       pg_catalog.has_table_privilege(r.oid,'public.profiles','TRIGGER') AS can_trigger,
+       pg_catalog.has_table_privilege(r.oid,'public.profiles','DELETE') AS can_delete,
+       pg_catalog.has_schema_privilege(r.oid,'public','CREATE') AS can_create_public_objects
+FROM pg_catalog.pg_roles r WHERE r.rolname IN ('anon','authenticated');
+SELECT p.prosecdef AS security_definer, p.proconfig = ARRAY['search_path=public']::text[] AS public_path,
+       pg_catalog.md5(pg_catalog.pg_get_functiondef(p.oid)) AS definition_fingerprint
+FROM pg_catalog.pg_proc p WHERE p.oid=pg_catalog.to_regprocedure('public.handle_new_user()');
+ROLLBACK;

@@ -52,4 +52,4 @@ The immediate owner decision is whether to approve this development PR. Separate
 
 ## Subsequent operational readiness review
 
-See [offline contract audit and owner-only verification plan](operational-readiness.md) and [future rollout runbook](production-rollout-runbook.md). These supersede assumptions of schema completeness: `public.profiles` has no repository baseline. No live verification or rollout is implied.
+See [offline contract audit and owner-only verification plan](operational-readiness.md) and [future rollout runbook](production-rollout-runbook.md). The follow-up [profiles security review](profiles-security-readiness.md) incorporates owner-supplied verified live metadata: `public.profiles` exists live. Proposed migrations now provide the repository baseline; live privilege remediation and exact provisioning-body review remain blocking. No live execution or rollout was performed by this task.

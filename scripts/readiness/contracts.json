@@ -101,7 +101,5 @@
       "p_now"
     ]
   },
-  "known_repository_gaps": [
-    "public.profiles"
-  ]
+  "known_repository_gaps": []
 }
