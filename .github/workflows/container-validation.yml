@@ -73,10 +73,35 @@ jobs:
           docker exec atoz_frontend wget -qO- http://127.0.0.1:8080/healthz | grep -qx ok
           docker exec atoz_frontend wget -qO- http://127.0.0.1:8080/dashboard | grep -q '<div id="root"></div>'
 
+      - name: Verify same-origin API routing through Caddy
+        run: |
+          set -euo pipefail
+          # Use the actual proposed routes with disposable HTTP listeners.
+          # No production domain is contacted and no host port is published.
+          sed -e 's/atozgrowth.net, www.atozgrowth.net {/http:\/\/:18080 {/' \
+              -e 's/^api.atozgrowth.net {/http:\/\/:18081 {/' \
+              proxy/Caddyfile > "$RUNNER_TEMP/Caddyfile.routing-test"
+          docker run -d --name atoz_route_check --network atoz_net \
+            -v "$RUNNER_TEMP/Caddyfile.routing-test:/etc/caddy/Caddyfile:ro" caddy:2-alpine
+          ready=false
+          for attempt in {1..30}; do
+            if docker exec atoz_route_check wget -Y off -qO- http://127.0.0.1:18080/dashboard | grep -q '<div id="root"></div>'; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+          # A SPA fallback would return 200; the protected backend must return 401.
+          response=$(docker exec atoz_route_check wget -Y off -S -O /dev/null http://127.0.0.1:18080/api/me 2>&1 || true)
+          grep -q 'HTTP/1.1 401' <<< "$response"
+          response=$(docker exec atoz_route_check wget -Y off -S -O /dev/null http://127.0.0.1:18081/api/me 2>&1 || true)
+          grep -q 'HTTP/1.1 401' <<< "$response"
+
       - name: Clean up test containers and synthetic fixture
         if: always()
         run: |
-          docker rm -f atoz_frontend atoz_caddy atoz_backend || true
+          docker rm -f atoz_route_check atoz_frontend atoz_caddy atoz_backend || true
           docker compose -f proxy/docker-compose.yml down --remove-orphans --volumes || true
           docker compose -f backend/docker-compose.yml down --remove-orphans --volumes || true
           docker network rm atoz_net || true

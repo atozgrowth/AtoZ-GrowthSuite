@@ -72,7 +72,7 @@ Rollback for an unsuccessful SSH hardening change is performed from the still-op
 
 - The backend Dockerfile is multi-stage, installs production dependencies only in the runtime image, runs as `node`, and declares a `/health` check.
 - The backend Compose definition adds a read-only root filesystem, temporary filesystem, dropped Linux capabilities, no-new-privileges, process/memory/CPU limits, health checks, and revision labels.
-- The proxy Compose definition adds an internal `atoz_frontend` service. The future Caddyfile routes `atozgrowth.net` and `www.atozgrowth.net` to it, while preserving the API route to `atoz_backend`.
+- The proxy Compose definition adds an internal `atoz_frontend` service. The future Caddyfile routes `atozgrowth.net` and `www.atozgrowth.net` to it, while preserving the API subdomain route and forwarding same-origin `/api` requests to `atoz_backend`.
 - The frontend container is static, listens only on the internal Docker network, and supports single-page-app route fallback.
 - The frontend image receives only `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_API_BASE_URL` as build arguments. These are public frontend values; `.env` files are excluded from the Docker build context. Never pass a service-role key or any private credential as a frontend build argument.
 
@@ -89,6 +89,6 @@ Then build the approved revision, verify backend and frontend health checks, vis
 
 ## CI/CD boundary
 
-Draft PR #1 remains a draft. Its staging workflow must stay in packaging-only mode: invoke it with `deploy=false`, require protected-environment review, and do not configure staging or production SSH/Supabase deployment credentials until a distinct staging host and project are verified.
+Draft PR #1 remains a draft. Its staging workflow is packaging-only, uses synthetic fixtures, and has no deployment input, environment, or job. Do not add staging or production SSH/Supabase deployment credentials. Any future deployment workflow requires a separate review, protected-environment approval, and verified target isolation.
 
 This remediation PR contains no deployment workflow and no deployment credential. It prepares the runtime definitions and runbook only. Production deployment remains manual and requires the approval checkpoints in this document.

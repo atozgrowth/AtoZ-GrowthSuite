@@ -4,7 +4,13 @@ atozgrowth.net, www.atozgrowth.net {
         format json
     }
     encode zstd gzip
-    reverse_proxy atoz_frontend:8080
+    @api path /api /api/*
+    handle @api {
+        reverse_proxy atoz_backend:3000
+    }
+    handle {
+        reverse_proxy atoz_frontend:8080
+    }
 }
 
 api.atozgrowth.net {
