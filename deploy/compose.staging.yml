@@ -1,0 +1,43 @@
+services:
+  backend:
+    image: atoz-staging-backend:${RELEASE_ID:?Release ID required}
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '3000'
+      SUPABASE_URL: ${SUPABASE_URL:?Staging Supabase URL required}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?Staging public key required}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      WP_MANAGER_CONTROLLED_WRITES_ENABLED: 'false'
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1);return r.json()}).then(b=>{if(b.success!==true||b.status!=='running')process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [staging]
+  web:
+    image: atoz-staging-web:${RELEASE_ID:?Release ID required}
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    restart: unless-stopped
+    environment:
+      # Internal container traffic must stay on the Compose network.
+      NO_PROXY: backend,localhost,127.0.0.1
+      no_proxy: backend,localhost,127.0.0.1
+    ports: ['127.0.0.1:${STAGING_BIND_PORT:-8080}:8080']
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -Y, 'off', -q, --spider, 'http://127.0.0.1:8080/']
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    networks: [staging]
+networks:
+  staging: {}
