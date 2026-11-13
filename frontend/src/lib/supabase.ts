@@ -1,9 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
-export const supabase: SupabaseClient | null = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+import { publicConfiguration } from "./publicConfig";
+const config = publicConfiguration(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
+export const isSupabaseConfigured = config !== null;
+export const supabase: SupabaseClient | null = config
+  ? createClient(config.url, config.key, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,

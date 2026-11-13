@@ -21,7 +21,7 @@ for (const screen of screens) {
     await expect(page.getByRole("heading", { name: screen.heading, exact: true })).toBeVisible();
     if (screen.public) await expect(page.locator('button[type="submit"]')).toBeEnabled();
     if (screen.path.endsWith("/dashboard")) {
-      await expect(page.getByText("https://store.example.test", { exact: true })).toBeVisible();
+      await expect(page.getByText("https://store.example.test/", { exact: true })).toBeVisible();
       await expect(page.locator(".metric-card").filter({ hasText: "Connected sites" }).locator("strong")).toHaveText("2");
       await expect(page.getByText("Verified", { exact: true })).toBeVisible();
     }
@@ -126,9 +126,9 @@ test("skip navigation targets main content and reviewed small-text contrast pass
 test("customer refresh recovers from a service error with the connected-only API shape", async ({ page }) => {
   await mockServices(page, { sitesError: true }); await cachedSession(page); await page.goto(root + "/dashboard");
   await expect(page.getByRole("alert")).toContainText("totals are unavailable");
-  await page.route("**/api/wp-manager/sites", route => route.fulfill({ json: { sites: [{ id: "synthetic-site", site_url: "https://recovered.example.test" }] } }));
+  await page.route("**/api/wp-manager/sites", route => route.fulfill({ json: { sites: [{ id: "20000000-0000-4000-8000-000000000003", site_url: "https://recovered.example.test" }] } }));
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await expect(page.getByText("https://recovered.example.test", { exact: true })).toBeVisible();
+  await expect(page.getByText("https://recovered.example.test/", { exact: true })).toBeVisible();
   await expect(page.locator(".metric-card").filter({ hasText: "Connected sites" }).locator("strong")).toHaveText("1");
   await expect(page.getByRole("alert")).toHaveCount(0);
 });

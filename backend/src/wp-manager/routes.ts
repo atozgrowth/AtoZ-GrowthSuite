@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { createClient } from "@supabase/supabase-js";
+import { createConnectedSitesReader } from "./connected-sites.js";
 import { authenticate, type AuthenticatedRequest } from "../auth/authenticate.js";
 import { PairingInputError, PairingService, type PairingStoreResult } from "./pairing.js";
 import {
@@ -17,6 +17,7 @@ import {
 } from "./controlled-actions.js";
 
 type RouteDependencies = {
+  listSites?: ReturnType<typeof createConnectedSitesReader>;
   pairingService?: PairingService | null;
   inspectionService?: SiteInspectionService | null;
   inventoryService?: SiteInventoryService | null;
@@ -112,6 +113,7 @@ export async function registerWpManagerRoutes(
   dependencies: RouteDependencies = {}
 ) {
   const authHandler = dependencies.authenticate ?? authenticate;
+  const listSites = dependencies.listSites ?? createConnectedSitesReader(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!);
   const pairingService =
     dependencies.pairingService === undefined
       ? (() => {
@@ -162,28 +164,10 @@ export async function registerWpManagerRoutes(
     "/api/wp-manager/sites",
     { preHandler: authHandler },
     async (request: AuthenticatedRequest, reply) => {
-      const userClient = createClient(
-        process.env.SUPABASE_URL!,
-        process.env.SUPABASE_ANON_KEY!,
-        {
-          global: {
-            headers: {
-              Authorization: "Bearer " + request.accessToken!,
-            },
-          },
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-          },
-        }
-      );
-
-      const { data, error } = await userClient
-        .from("wordpress_site_connections")
-        .select("id, site_url")
-        .eq("user_id", request.user!.id)
-        .eq("status", "connected")
-        .order("site_url", { ascending: true });
+      let result;
+      try { result = await listSites(request.user!.id, request.accessToken!); }
+      catch { return reply.code(503).send({ success: false, message: "The connected sites service is temporarily unavailable." }); }
+      const { data, error } = result;
 
       if (error) {
         return reply.code(500).send({

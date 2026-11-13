@@ -37,3 +37,17 @@ test("startup loads .env before authentication imports and rejects anonymous API
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("startup rejects missing public configuration even when a privileged key is supplied", { timeout: 15000 }, async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  const dir = await mkdtemp(join(tmpdir(), "atoz-config-"));
+  try {
+    for (const missing of ["SUPABASE_URL", "SUPABASE_ANON_KEY"]) {
+      const env = { ...process.env, SUPABASE_URL: "https://example.supabase.co", SUPABASE_ANON_KEY: "test-anon-key", SUPABASE_SERVICE_ROLE_KEY: "synthetic-backend-only" };
+      delete env[missing];
+      await assert.rejects(run(process.execPath, ["--import", import.meta.resolve("tsx"), fileURLToPath(new URL("../src/index.ts", import.meta.url))], { cwd: dir, env, timeout: 5000 }), error => Boolean(error.stderr?.includes("Missing SUPABASE_URL or SUPABASE_ANON_KEY")));
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

@@ -8,13 +8,13 @@ import type {
   WordPressSite,
   WordPressSiteInspection,
   WordPressSiteInspectionResponse,
-  WordPressSitesResponse,
   WordPressControlledAction,
   WordPressControlledActionDetail,
   WordPressControlledActionDetailResponse,
   WordPressControlledActionListResponse,
   WordPressControlledActionResponse,
 } from "../types/wordpress";
+import { isSiteId, parseConnectedSites } from "./siteContract";
 import { resolveApiBase } from "../lib/apiBase";
 
 const API_BASE = `${resolveApiBase(import.meta.env.VITE_API_BASE_URL)}/wp-manager`;
@@ -51,11 +51,12 @@ export async function getWordPressSites(
   accessToken: string,
   signal?: AbortSignal,
 ): Promise<WordPressSite[]> {
+  const headers = authorizationHeaders(accessToken);
   let response: Response;
   try {
     response = await fetch(`${API_BASE}/sites`, {
       method: "GET",
-      headers: authorizationHeaders(accessToken),
+      headers,
       signal,
     });
   } catch (error) {
@@ -71,33 +72,21 @@ export async function getWordPressSites(
   }
 
   const payload = await responsePayload(response);
-  const sites = Array.isArray(payload)
-    ? payload
-    : (payload as Partial<WordPressSitesResponse> | null)?.sites;
-  if (!Array.isArray(sites)) {
-    throw new ApiError("The sites service returned an unexpected response.");
-  }
-
-  return sites.filter(
-    (site): site is WordPressSite =>
-      Boolean(
-        site &&
-          typeof site === "object" &&
-          typeof (site as WordPressSite).site_url === "string",
-      ),
-  );
+  try { return parseConnectedSites(payload); }
+  catch { throw new ApiError("The sites service returned an invalid inventory. No totals are available."); }
 }
 
 export async function initiateWordPressPairing(
   accessToken: string,
   siteUrl: string,
 ): Promise<WordPressPairing> {
+  const headers = authorizationHeaders(accessToken);
   let response: Response;
   try {
     response = await fetch(`${API_BASE}/pairing/initiate`, {
       method: "POST",
       headers: {
-        ...authorizationHeaders(accessToken),
+        ...headers,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ site_url: siteUrl }),
@@ -134,17 +123,18 @@ export async function getWordPressSiteInspection(
   accessToken: string,
   connectionId: string,
 ): Promise<WordPressSiteInspection> {
-  if (!/^[0-9a-f-]{36}$/i.test(connectionId)) {
+  if (!isSiteId(connectionId)) {
     throw new ApiError("The connected site identifier is invalid.");
   }
 
+  const headers = authorizationHeaders(accessToken);
   let response: Response;
   try {
     response = await fetch(
       `${API_BASE}/sites/${encodeURIComponent(connectionId)}/inspection`,
       {
         method: "GET",
-        headers: authorizationHeaders(accessToken),
+        headers,
       },
     );
   } catch {
@@ -184,15 +174,16 @@ export async function getWordPressInventory(
   page = 1,
   perPage = 20,
 ): Promise<WordPressInventory> {
-  if (!/^[0-9a-f-]{36}$/i.test(connectionId)) throw new ApiError("The connected site identifier is invalid.");
+  if (!isSiteId(connectionId)) throw new ApiError("The connected site identifier is invalid.");
   if (!Number.isInteger(page) || page < 1 || !Number.isInteger(perPage) || perPage < 1 || perPage > 50) {
     throw new ApiError("The inventory page request is invalid.");
   }
   const query = resource === "plugins" ? "" : `?page=${page}&per_page=${perPage}`;
+  const headers = authorizationHeaders(accessToken);
   let response: Response;
   try {
     response = await fetch(`${API_BASE}/sites/${encodeURIComponent(connectionId)}/${resource}${query}`, {
-      method: "GET", headers: authorizationHeaders(accessToken),
+      method: "GET", headers,
     });
   } catch { throw new ApiError("The connected WordPress inventory could not be reached."); }
   const payload = await responsePayload(response);
@@ -215,8 +206,7 @@ function controlledActionRecord(value: unknown): WordPressControlledAction {
     throw new ApiError("The controlled action service returned an unexpected response.");
   }
   const action = value as Record<string, unknown>;
-  const uuid = (field: unknown) =>
-    typeof field === "string" && field.length === 36 && !/[^0-9a-f-]/i.test(field);
+  const uuid = isSiteId;
   const date = (field: unknown) =>
     typeof field === "string" && Number.isFinite(Date.parse(field));
   const nullableDate = (field: unknown) => field === null || date(field);
@@ -260,9 +250,10 @@ async function controlledActionFetch(
   path: string,
   method: "GET" | "POST" = "GET",
 ) {
+  const headers = authorizationHeaders(accessToken);
   let response: Response;
   try {
-    response = await fetch(API_BASE + path, { method, headers: authorizationHeaders(accessToken) });
+    response = await fetch(API_BASE + path, { method, headers });
   } catch {
     throw new ApiError("The controlled action service could not be reached.");
   }
@@ -283,7 +274,7 @@ export async function getWordPressControlledActions(
   accessToken: string,
   connectionId: string,
 ): Promise<WordPressControlledAction[]> {
-  if (connectionId.length !== 36 || /[^0-9a-f-]/i.test(connectionId)) {
+  if (!isSiteId(connectionId)) {
     throw new ApiError("The connected site identifier is invalid.");
   }
   const payload = await controlledActionFetch(
@@ -301,6 +292,7 @@ export async function getWordPressControlledAction(
   accessToken: string,
   actionId: string,
 ): Promise<WordPressControlledActionDetail> {
+  if (!isSiteId(actionId)) throw new ApiError("The action identifier is invalid.");
   const payload = await controlledActionFetch(
     accessToken,
     "/actions/" + encodeURIComponent(actionId),
@@ -315,6 +307,7 @@ async function transitionWordPressControlledAction(
   actionId: string,
   transition: "approve" | "cancel",
 ): Promise<WordPressControlledAction> {
+  if (!isSiteId(actionId)) throw new ApiError("The action identifier is invalid.");
   const payload = await controlledActionFetch(
     accessToken,
     "/actions/" + encodeURIComponent(actionId) + "/" + transition,

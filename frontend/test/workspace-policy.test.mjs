@@ -9,7 +9,11 @@ test("only trusted app metadata enables admin navigation", () => {
 });
 test("login destinations cannot navigate to external or unsupported routes", () => {
   for (const path of ["https://evil.test", "//evil.test", "/\\evil.test", "/admin?redirect=https://evil.test", {}, null]) assert.equal(safeDestination(path), "/dashboard");
-  assert.equal(safeDestination("/workspace/owner/account"), "/workspace/owner/account");
+  assert.equal(safeDestination("/workspace/10000000-0000-4000-8000-000000000001/account"), "/workspace/10000000-0000-4000-8000-000000000001/account");
   assert.equal(safeDestination("/admin"), "/admin");
   assert.equal(workspacePath("user/id"), "/workspace/user%2Fid/dashboard");
+});
+
+test("return paths reject traversal and encoded separators instead of normalizing them into another route", () => {
+  for (const path of ["/workspace/../account", "/workspace/./dashboard", "/workspace/%2f%2fevil/account", "/workspace/%5cevil/dashboard", "/workspace/owner/account"]) assert.equal(safeDestination(path), "/dashboard");
 });
