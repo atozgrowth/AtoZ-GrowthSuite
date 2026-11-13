@@ -1,0 +1,110 @@
+name: Container validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hardened-runtime:
+    runs-on: ubuntu-latest
+    env:
+      # Deliberately synthetic fixtures. This workflow has no environment,
+      # repository secrets, SSH material, or deployment step.
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_ANON_KEY: test-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_ANON_KEY: test-anon-key
+      VITE_API_BASE_URL: /api
+      DEPLOY_REVISION: ci-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Build and validate backend Compose configuration
+        run: |
+          set -euo pipefail
+          cat > backend/.env <<'EOF'
+          SUPABASE_URL=https://example.supabase.co
+          SUPABASE_ANON_KEY=test-anon-key
+          SUPABASE_SERVICE_ROLE_KEY=
+          PORT=3000
+          HOST=0.0.0.0
+          EOF
+          docker network create atoz_net
+          docker compose -f backend/docker-compose.yml config
+          docker compose -f backend/docker-compose.yml up --build --wait --wait-timeout 120
+
+      - name: Assert backend hardening and health
+        run: |
+          set -euo pipefail
+          health="$(docker inspect --format '{{.State.Health.Status}}' atoz_backend)"
+          readonly="$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' atoz_backend)"
+          user="$(docker inspect --format '{{.Config.User}}' atoz_backend)"
+          caps="$(docker inspect --format '{{json .HostConfig.CapDrop}}' atoz_backend)"
+          security="$(docker inspect --format '{{json .HostConfig.SecurityOpt}}' atoz_backend)"
+          revision="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' atoz_backend)"
+          uid="$(docker exec atoz_backend id -u)"
+          printf 'health=%s readonly=%s user=%s caps=%s security=%s revision=%s uid=%s\n' "$health" "$readonly" "$user" "$caps" "$security" "$revision" "$uid"
+          test "$health" = healthy
+          test "$readonly" = true
+          test "$user" = node
+          test "$caps" = '["ALL"]'
+          [[ "$security" == *'no-new-privileges:true'* ]]
+          test "$revision" = "$DEPLOY_REVISION"
+          test "$uid" -ne 0
+          docker exec atoz_backend node -e "fetch('http://127.0.0.1:3000/health').then(async response => { if (!response.ok || (await response.json()).status !== 'running') process.exit(1); })"
+
+      - name: Validate Caddy and the frontend container
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$GITHUB_WORKSPACE/proxy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+          docker compose -f proxy/docker-compose.yml config
+          docker compose -f proxy/docker-compose.yml up --build --wait --wait-timeout 120 frontend
+          test "$(docker inspect --format '{{.State.Health.Status}}' atoz_frontend)" = healthy
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' atoz_frontend)" = true
+          test "$(docker exec atoz_frontend id -u)" -ne 0
+          docker exec atoz_frontend wget -qO- http://127.0.0.1:8080/healthz | grep -qx ok
+          docker exec atoz_frontend wget -qO- http://127.0.0.1:8080/dashboard | grep -q '<div id="root"></div>'
+
+      - name: Verify same-origin API routing through Caddy
+        run: |
+          set -euo pipefail
+          # Use the actual proposed routes with disposable HTTP listeners.
+          # No production domain is contacted and no host port is published.
+          sed -e 's/atozgrowth.net, www.atozgrowth.net {/http:\/\/:18080 {/' \
+              -e 's/^api.atozgrowth.net {/http:\/\/:18081 {/' \
+              proxy/Caddyfile > "$RUNNER_TEMP/Caddyfile.routing-test"
+          docker run -d --name atoz_route_check --network atoz_net \
+            -e NO_PROXY=atoz_backend,atoz_frontend,localhost,127.0.0.1 \
+            -e no_proxy=atoz_backend,atoz_frontend,localhost,127.0.0.1 \
+            -v "$RUNNER_TEMP/Caddyfile.routing-test:/etc/caddy/Caddyfile:ro" caddy:2-alpine
+          ready=false
+          for attempt in {1..30}; do
+            if docker exec atoz_route_check wget -Y off -qO- http://127.0.0.1:18080/dashboard | grep -q '<div id="root"></div>'; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+          # A SPA fallback would return 200; the protected backend must return 401.
+          response=$(docker exec atoz_route_check wget -Y off -S -O /dev/null http://127.0.0.1:18080/api/me 2>&1 || true)
+          grep -q 'HTTP/1.1 401' <<< "$response"
+          response=$(docker exec atoz_route_check wget -Y off -S -O /dev/null http://127.0.0.1:18081/api/me 2>&1 || true)
+          grep -q 'HTTP/1.1 401' <<< "$response"
+
+      - name: Clean up test containers and synthetic fixture
+        if: always()
+        run: |
+          docker rm -f atoz_route_check atoz_frontend atoz_caddy atoz_backend || true
+          docker compose -f proxy/docker-compose.yml down --remove-orphans --volumes || true
+          docker compose -f backend/docker-compose.yml down --remove-orphans --volumes || true
+          docker network rm atoz_net || true
+          rm -f backend/.env

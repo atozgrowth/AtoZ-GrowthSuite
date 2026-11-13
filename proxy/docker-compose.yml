@@ -4,6 +4,9 @@ services:
     container_name: atoz_caddy
     restart: unless-stopped
 
+    environment:
+      NO_PROXY: atoz_backend,atoz_frontend,localhost,127.0.0.1
+      no_proxy: atoz_backend,atoz_frontend,localhost,127.0.0.1
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -15,6 +18,40 @@ services:
       - caddy_config:/config
     networks:
       - atoz_net
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?Public Supabase URL required for frontend build}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:?Public Supabase anon key required for frontend build}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    container_name: atoz_frontend
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+      - /var/cache/nginx:rw,noexec,nosuid,size=32m
+      - /var/run:rw,noexec,nosuid,size=8m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.50
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      atoz_net:
+        aliases:
+          - atoz_frontend
 
 volumes:
   caddy_data:
