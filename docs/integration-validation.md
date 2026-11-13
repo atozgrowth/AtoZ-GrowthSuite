@@ -49,3 +49,7 @@ The Frontend navigation workflow keeps read-only permissions, publishes fixture 
 This PR has no database migration or production operation. Development rollback is a normal revert of the PR, not a database rollback. A later separately approved application rollout must retain previous image IDs and frontend build/configuration, use the existing backup/recovery review, and verify health, auth rejection, dashboard inventory and routing after either rollout or rollback. Do not change Auth settings, rotate keys, disable guards or rewrite historical data to make a test pass.
 
 The immediate owner decision is whether to approve this development PR. Separately decide whether to authorize or defer the live-verification checklist, distinguishing read-only configuration/schema review from real test-account/email/WordPress exercises. Neither approval grants deployment permission. No live correctness claim can be made until that separate evidence exists.
+
+## Subsequent operational readiness review
+
+See [offline contract audit and owner-only verification plan](operational-readiness.md) and [future rollout runbook](production-rollout-runbook.md). These supersede assumptions of schema completeness: `public.profiles` has no repository baseline. No live verification or rollout is implied.

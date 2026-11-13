@@ -18,3 +18,9 @@ test("production, lookalike hosts and embedded credentials are rejected", () => 
     assert.throws(() => checkStaging({ ...staging, VITE_SUPABASE_URL: url }));
   }
 });
+
+test("contradictory frontend/backend configuration cannot bypass the database boundary", () => {
+  assert.throws(() => checkStaging({ ...staging, SUPABASE_URL: "https://production-ref.supabase.co" }));
+  assert.throws(() => checkStaging({ ...staging, SUPABASE_URL: "" }));
+  assert.doesNotThrow(() => checkStaging({ ...staging, SUPABASE_URL: staging.VITE_SUPABASE_URL }));
+});
