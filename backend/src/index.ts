@@ -1,12 +1,10 @@
+import "dotenv/config";
 import Fastify, { FastifyReply, FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
-import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import { registerWpManagerRoutes } from "./wp-manager/routes.js";
 import { authenticate, type AuthenticatedRequest } from "./auth/authenticate.js";
-
-dotenv.config();
 
 const app = Fastify({
   logger: true,

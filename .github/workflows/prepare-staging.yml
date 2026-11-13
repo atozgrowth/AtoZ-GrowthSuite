@@ -1,0 +1,50 @@
+name: Prepare staging release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: prepare-staging
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      # Packaging is deliberately synthetic. No GitHub environment, Supabase
+      # credential, VPS target, SSH key, or deploy step is available here.
+      VITE_SUPABASE_URL: https://staging-fixture.supabase.co
+      VITE_SUPABASE_ANON_KEY: test-anon-key
+      VITE_API_BASE_URL: /api
+      STAGING_SUPABASE_PROJECT_REF: staging-fixture
+      PRODUCTION_SUPABASE_PROJECT_REF: production-fixture
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Require a distinct staging database
+        run: node scripts/check-staging.mjs
+      - run: npm ci && npm test && npm run build && npm audit --audit-level=high
+        working-directory: backend
+      - run: npm ci && npm test && npm run build && npm audit --audit-level=high
+        working-directory: frontend
+      - run: node --test scripts/*.test.mjs && bash scripts/smoke-release.sh
+      - name: Package validation-only release without credentials
+        run: |
+          mkdir -p release/backend release/frontend
+          cp backend/package.json backend/package-lock.json release/backend/
+          cp -r backend/dist release/backend/
+          cp -r frontend/dist release/frontend/
+          cp -r deploy release/
+          cp scripts/check-staging.mjs release/deploy/
+          git rev-parse HEAD > release/COMMIT
+          printf '%s-%s-%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > release/RELEASE
+          tar -czf staging-release.tar.gz -C release .
+          sha256sum staging-release.tar.gz > staging-release.tar.gz.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staging-${{ github.sha }}
+          path: |
+            staging-release.tar.gz
+            staging-release.tar.gz.sha256
+          retention-days: 14

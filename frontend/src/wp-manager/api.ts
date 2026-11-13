@@ -15,8 +15,9 @@ import type {
   WordPressControlledActionListResponse,
   WordPressControlledActionResponse,
 } from "../types/wordpress";
+import { resolveApiBase } from "../lib/apiBase";
 
-const API_BASE = "https://api.atozgrowth.net/api/wp-manager";
+const API_BASE = `${resolveApiBase(import.meta.env.VITE_API_BASE_URL)}/wp-manager`;
 
 export class ApiError extends Error {
   constructor(message: string, public readonly status?: number) {
