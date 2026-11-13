@@ -9,7 +9,7 @@ docker = ['docker', '--host=unix:///var/run/docker.sock']
 name = 'atoz-schema-fixture-' + str(os.getpid())
 def run(args, **kwargs):
     return subprocess.run(docker + args, check=True, capture_output=True, text=True, **kwargs).stdout.strip()
-def sql(query, role=None):
+def sql(query):
     return run(['exec', '-i', name, 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'fixture'], input=query)
 def denied(query):
     result = subprocess.run(docker + ['exec', '-i', name, 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'fixture'], input=query, text=True, capture_output=True)
@@ -47,6 +47,11 @@ try:
     assert sql(owner + 'SELECT count(*) FROM public.wordpress_site_connections;') == '1'
     assert sql(owner + "SELECT count(*) FROM public.wordpress_site_connections WHERE user_id='10000000-0000-4000-8000-000000000002';") == '0'
     denied(owner + "INSERT INTO public.wordpress_site_connections(user_id,site_url) VALUES ('10000000-0000-4000-8000-000000000002','https://forged.example.test');")
+    denied('SET ROLE anon; SELECT * FROM public.wordpress_site_connections;')
+    denied(owner + "UPDATE public.wordpress_site_connections SET site_url='https://forged.example.test';")
+    denied(owner + 'DELETE FROM public.wordpress_site_connections;')
+    # Validate the owner-only catalog plan on this fixture, never a live connection.
+    sql((root/'scripts/readiness/live-schema-readonly.sql').read_text())
     for table in ['private.wordpress_pairing_challenges', 'private.wordpress_action_payloads']:
         denied('SET ROLE authenticated; SELECT * FROM ' + table + ';')
         assert sql(f"SELECT has_table_privilege('service_role','{table}','SELECT');") == 't'
