@@ -1,11 +1,6 @@
 name: Prepare staging release
 on:
   workflow_dispatch:
-    inputs:
-      deploy:
-        description: Activate on the verified staging VPS after packaging
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -14,13 +9,14 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    environment: staging
     env:
-      VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      # Packaging is deliberately synthetic. No GitHub environment, Supabase
+      # credential, VPS target, SSH key, or deploy step is available here.
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_ANON_KEY: test-anon-key
       VITE_API_BASE_URL: /api
-      STAGING_SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_PROJECT_REF: staging-fixture
+      PRODUCTION_SUPABASE_PROJECT_REF: production-fixture
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -33,7 +29,7 @@ jobs:
       - run: npm ci && npm test && npm run build && npm audit --audit-level=high
         working-directory: frontend
       - run: node --test scripts/*.test.mjs && bash scripts/smoke-release.sh
-      - name: Package immutable release without credentials
+      - name: Package validation-only release without credentials
         run: |
           mkdir -p release/backend release/frontend
           cp backend/package.json backend/package-lock.json release/backend/
@@ -52,39 +48,3 @@ jobs:
             staging-release.tar.gz
             staging-release.tar.gz.sha256
           retention-days: 14
-  deploy:
-    if: ${{ inputs.deploy }}
-    needs: release
-    runs-on: ubuntu-latest
-    environment: staging
-    env:
-      STAGING_HOST: ${{ vars.SSH_HOST }}
-      PRODUCTION_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
-      STAGING_USER: ${{ vars.SSH_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: staging-${{ github.sha }}
-      - name: Verify artifact and deploy through pinned SSH identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$STAGING_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
-          [[ "$STAGING_USER" =~ ^[a-z_][a-z0-9_-]*$ && "$STAGING_USER" != root ]]
-          [[ -n "$PRODUCTION_HOST" && "$STAGING_HOST" != "$PRODUCTION_HOST" ]]
-          [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
-          sha256sum -c staging-release.tar.gz.sha256
-          ssh_dir=$(mktemp -d)
-          trap 'rm -rf "$ssh_dir"' EXIT
-          chmod 700 "$ssh_dir"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_dir/key"
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
-          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
-          ssh_options=(-i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts")
-          target="$STAGING_USER@$STAGING_HOST"
-          release_path="/srv/atoz-staging/releases/$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          ssh "${ssh_options[@]}" "$target" "mkdir '$release_path'"
-          scp "${ssh_options[@]}" staging-release.tar.gz staging-release.tar.gz.sha256 "$target:$release_path/"
-          ssh "${ssh_options[@]}" "$target" "cd '$release_path' && sha256sum -c staging-release.tar.gz.sha256 && tar -xzf staging-release.tar.gz && bash deploy/activate-staging.sh '$release_path' /srv/atoz-staging/.env.staging /srv/atoz-staging"
