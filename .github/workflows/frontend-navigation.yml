@@ -23,6 +23,18 @@ jobs:
         working-directory: frontend
       - run: npm run test:e2e
         working-directory: frontend
+      - name: Build seven-screen preview index
+        run: npm run preview:index
+        working-directory: frontend
+        env:
+          PREVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Publish dashboard screenshot gallery
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dashboard-previews-${{ github.run_id }}-${{ github.run_attempt }}
+          path: frontend/preview-screenshots/
+          if-no-files-found: error
+          retention-days: 30
       - name: Save synthetic browser evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

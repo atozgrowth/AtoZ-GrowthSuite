@@ -4,3 +4,14 @@
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 .user-email{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-identity p{overflow-wrap:anywhere}
 @media(max-width:760px){.sidebar{visibility:hidden}.sidebar.is-open{visibility:visible}}
+.drawer-close{display:none}
+@media(max-width:760px){.drawer-close{display:grid;place-items:center;margin-left:auto;width:36px;height:36px;border:1px solid #58627a;border-radius:7px;background:transparent;color:white;font-size:24px;cursor:pointer}.sidebar-brand{gap:8px;padding-right:14px}}
+/* Keep WordPress controls within the narrower content area beside the sidebar. */
+.site-details h3{overflow-wrap:anywhere}.site-details a{white-space:nowrap}.count-badge{flex-shrink:0;white-space:nowrap}
+@media(max-width:1100px){.page-header.split{align-items:flex-start;flex-direction:column}.header-actions{flex-wrap:wrap}.site-row{flex-wrap:wrap}.site-row .site-logo{width:44px;flex-shrink:0}.site-row .site-details{flex-basis:calc(100% - 60px)}.site-row .inspect-button{flex-shrink:0}.site-row .status-pill{margin-left:auto}.title-row{flex-wrap:wrap}}
+.login-message .login-title{color:inherit}
+.metric-card>div{min-width:0;overflow-wrap:anywhere}.metric-card>svg{flex-shrink:0}
+@media(min-width:761px) and (max-width:950px){.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric-card:last-child{grid-column:1/-1}}
+/* Small text and keyboard indicators retain contrast on their actual surfaces. */
+:root{--muted:#626e84}.nav-label{color:#8994af}.status-pill.success{color:#146b4e}.unavailable-badge{color:#5d687b}
+button:focus-visible,a:focus-visible,input:focus-visible{outline-color:#6752e8}

@@ -72,3 +72,4 @@ Thumbs.db
 # Browser test output
 **/playwright-report/
 **/test-results/
+**/preview-screenshots/

@@ -1,4 +1,4 @@
-export interface WordPressSite { id?: string | number; site_url: string; created_at?: string; [key: string]: unknown }
+export interface WordPressSite { status?: unknown; id?: string | number; site_url: string; created_at?: string; [key: string]: unknown }
 export interface WordPressSitesResponse { sites: WordPressSite[] }
 
 export interface WordPressPairing {

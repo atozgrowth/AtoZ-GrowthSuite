@@ -30,3 +30,10 @@ The same-origin `/api` route is the default, with existing Caddy/Vite proxy conf
 ## Checks
 
 `npm test` in backend verifies token rejection, Auth-service failures, workspace ownership and server-owned admin roles alongside existing tests. Frontend `npm test` covers role/navigation policy. `npm run test:e2e` in frontend uses a fixture-only Vite server and mocked Auth/API responses to test login, signup, callback, expired sessions, forged claims, foreign workspaces, admin denial, module navigation, sign-out and mobile layout. External non-fixture requests are blocked. The dedicated Frontend navigation workflow uses read-only permissions and no GitHub environment or production secrets.
+
+
+## PR #17 visual review evidence
+
+The Frontend navigation workflow generates a separate `dashboard-previews-RUN_ID-ATTEMPT` artifact (30-day retention). Download it and open `index.html`; README.md provides the same seven-screen index. Full-page originals cover Login, Signup, Customer Dashboard, Admin Dashboard, WordPress Manager, Account Settings and the Mobile Customer Dashboard. manifest.json records tested revision, PR head, routes, fixture personas and PNG dimensions; SHA256SUMS covers all screenshots and index files. The separate browser report retains failure traces for seven days.
+
+Preview tests run the app locally with intercepted synthetic Auth/API responses. Site fixtures match the connected-only endpoint's actual id/site_url response shape, including the legacy omission of status. Responsive checks cover 360/768/1440px, keyboard focus containment/Escape/return focus in the mobile drawer, busy-state semantics, public-form headings and existing WordPress connection controls. Auth, admin-role and foreign-workspace rejection tests remain mandatory. These previews do not certify live email delivery, database readiness or real WordPress connectivity.
