@@ -44,13 +44,21 @@ jobs:
       - name: Assert backend hardening and health
         run: |
           set -euo pipefail
-          test "$(docker inspect --format '{{.State.Health.Status}}' atoz_backend)" = healthy
-          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' atoz_backend)" = true
-          test "$(docker inspect --format '{{.Config.User}}' atoz_backend)" = node
-          docker inspect --format '{{json .HostConfig.CapDrop}}' atoz_backend | grep -qx '["ALL"]'
-          docker inspect --format '{{json .HostConfig.SecurityOpt}}' atoz_backend | grep -q 'no-new-privileges:true'
-          test "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' atoz_backend)" = "$DEPLOY_REVISION"
-          test "$(docker exec atoz_backend id -u)" -ne 0
+          health="$(docker inspect --format '{{.State.Health.Status}}' atoz_backend)"
+          readonly="$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' atoz_backend)"
+          user="$(docker inspect --format '{{.Config.User}}' atoz_backend)"
+          caps="$(docker inspect --format '{{json .HostConfig.CapDrop}}' atoz_backend)"
+          security="$(docker inspect --format '{{json .HostConfig.SecurityOpt}}' atoz_backend)"
+          revision="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' atoz_backend)"
+          uid="$(docker exec atoz_backend id -u)"
+          printf 'health=%s readonly=%s user=%s caps=%s security=%s revision=%s uid=%s\n' "$health" "$readonly" "$user" "$caps" "$security" "$revision" "$uid"
+          test "$health" = healthy
+          test "$readonly" = true
+          test "$user" = node
+          test "$caps" = '["ALL"]'
+          [[ "$security" == *'no-new-privileges:true'* ]]
+          test "$revision" = "$DEPLOY_REVISION"
+          test "$uid" -ne 0
           docker exec atoz_backend node -e "fetch('http://127.0.0.1:3000/health').then(async response => { if (!response.ok || (await response.json()).status !== 'running') process.exit(1); })"
 
       - name: Validate Caddy and the frontend container
