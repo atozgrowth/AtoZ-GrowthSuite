@@ -1,0 +1,87 @@
+name: RC artifact delivery
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/rc-artifact.yml
+      - scripts/rc/**
+      - docs/rc-artifacts.md
+  workflow_dispatch:
+
+# Artifact storage uses the runner artifact service, not a release-write token.
+permissions:
+  contents: read
+
+concurrency:
+  group: rc-artifact-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      RC_VERSION: v2026.11.14-rc.1
+      # Application source is deliberately independent of the tooling PR SHA.
+      RC_SOURCE_SHA: 4cdf318464719972f6e5a62c2c61d9a06b2a0ab1
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_ANON_KEY: test-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_ANON_KEY: test-anon-key
+      VITE_API_BASE_URL: /api
+      WP_MANAGER_CONTROLLED_WRITES_ENABLED: 'false'
+      VITE_WP_CONTROLLED_ACTION_UI_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: 4cdf318464719972f6e5a62c2c61d9a06b2a0ab1
+          path: rc-source
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Test artifact integrity verifier
+        run: python3 -m unittest discover -s scripts/rc -p 'test_*.py'
+      - name: Test, build, and validate synthetic candidate
+        run: bash scripts/rc/build.sh "$GITHUB_WORKSPACE/rc-source" "$RUNNER_TEMP/rc-output"
+      - name: Export content-addressed images and metadata
+        run: python3 scripts/rc/package.py "$GITHUB_WORKSPACE/rc-source" "$RUNNER_TEMP/rc-output"
+      - name: Verify candidate before storage
+        run: python3 scripts/rc/verify.py "$RUNNER_TEMP/rc-output" --expected-source "$RC_SOURCE_SHA"
+      - name: Store immutable candidate
+        id: artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rc-v2026.11.14-rc.1-4cdf318-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc-output/
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+          compression-level: 0
+      - name: Download the stored artifact for round-trip verification
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: rc-v2026.11.14-rc.1-4cdf318-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc-downloaded
+      - name: Verify downloaded contents against the pre-upload checksums
+        run: |
+          cmp "$RUNNER_TEMP/rc-output/SHA256SUMS" "$RUNNER_TEMP/rc-downloaded/SHA256SUMS"
+          python3 scripts/rc/verify.py "$RUNNER_TEMP/rc-downloaded" --expected-source "$RC_SOURCE_SHA"
+      - name: Record delivery identity
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+          ARTIFACT_ID: ${{ steps.artifact.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.artifact.outputs.artifact-digest }}
+        run: |
+          printf '### Validation-only RC\n\nSource: `%s`\n\nArtifact: %s\n\nArtifact ID: `%s`\n\nZIP SHA-256: `%s`\n\nRetention: 30 days. Not approved for production.\n' \
+            "$RC_SOURCE_SHA" "$ARTIFACT_URL" "$ARTIFACT_ID" "$ARTIFACT_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove disposable fixtures
+        if: always()
+        run: |
+          docker rm -f atoz_route_check atoz_frontend atoz_backend || true
+          docker network rm atoz_net || true
+          rm -f rc-source/backend/.env
