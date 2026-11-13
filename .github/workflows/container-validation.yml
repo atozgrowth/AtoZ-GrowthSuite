@@ -82,6 +82,8 @@ jobs:
               -e 's/^api.atozgrowth.net {/http:\/\/:18081 {/' \
               proxy/Caddyfile > "$RUNNER_TEMP/Caddyfile.routing-test"
           docker run -d --name atoz_route_check --network atoz_net \
+            -e NO_PROXY=atoz_backend,atoz_frontend,localhost,127.0.0.1 \
+            -e no_proxy=atoz_backend,atoz_frontend,localhost,127.0.0.1 \
             -v "$RUNNER_TEMP/Caddyfile.routing-test:/etc/caddy/Caddyfile:ro" caddy:2-alpine
           ready=false
           for attempt in {1..30}; do

@@ -4,6 +4,9 @@ services:
     container_name: atoz_caddy
     restart: unless-stopped
 
+    environment:
+      NO_PROXY: atoz_backend,atoz_frontend,localhost,127.0.0.1
+      no_proxy: atoz_backend,atoz_frontend,localhost,127.0.0.1
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
