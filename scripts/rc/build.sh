@@ -83,7 +83,7 @@ for name in ['backend','frontend']:
  assert uid!='0' and d['HostConfig']['ReadonlyRootfs'] and 'ALL' in d['HostConfig']['CapDrop']
  assert 'no-new-privileges:true' in d['HostConfig']['SecurityOpt']
  assert d['State']['Health']['Status']=='healthy'
- checks[name]={'image_config_digest':d['Image'],'uid':uid,'read_only':True,'cap_drop':['ALL'],'no_new_privileges':True,'health':'healthy'}
+ checks[name]={'docker_image_identity':d['Image'],'uid':uid,'read_only':True,'cap_drop':['ALL'],'no_new_privileges':True,'health':'healthy'}
 health=json.loads(subprocess.check_output(['docker','exec','atoz_backend','node','-e',"fetch('http://127.0.0.1:3000/health').then(async r=>console.log(JSON.stringify(await r.json())))"],text=True))
 assert health['success'] is True and health['status']=='running'
 checks['health']=health

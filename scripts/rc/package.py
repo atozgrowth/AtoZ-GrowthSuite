@@ -37,6 +37,15 @@ def archive(directory, target):
                     tar.addfile(info, f)
 
 
+def validate_runtime_config(config, inspect):
+    """Docker's classic store IDs are config digests; containerd IDs may be indexes."""
+    value = json.loads(config)
+    assert value['rootfs']['diff_ids'] == inspect['RootFS']['Layers']
+    assert value['architecture'] == inspect['Architecture'] and value['os'] == inspect['Os']
+    for key in ['Env', 'Cmd', 'Entrypoint', 'WorkingDir', 'User', 'Labels']:
+        assert value.get('config', {}).get(key) == inspect['Config'].get(key), key
+
+
 def main(source, out):
     sha = os.environ['RC_SOURCE_SHA']
     version = os.environ['RC_VERSION']
@@ -64,7 +73,7 @@ def main(source, out):
                 docker_manifest = json.load(tar.extractfile('manifest.json'))[0]
                 config = tar.extractfile(docker_manifest['Config']).read()
                 config_desc = blob(config)
-                assert config_desc['digest'] == inspect['Id']
+                validate_runtime_config(config, inspect)
                 config_desc['mediaType'] = 'application/vnd.oci.image.config.v1+json'
                 layers = []
                 for number, name in enumerate(docker_manifest['Layers']):
@@ -83,7 +92,7 @@ def main(source, out):
                 manifest_desc = blob(json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode())
                 manifest_desc.update(mediaType=manifest['mediaType'], platform={'architecture': inspect['Architecture'], 'os': inspect['Os']}, annotations={'org.opencontainers.image.ref.name': role + ':' + version})
                 index['manifests'].append(manifest_desc)
-                identities[role] = {'image_config_digest': inspect['Id'], 'oci_manifest_digest': manifest_desc['digest'], 'platform': inspect['Os'] + '/' + inspect['Architecture']}
+                identities[role] = {'docker_image_identity': inspect['Id'], 'image_config_digest': config_desc['digest'], 'oci_manifest_digest': manifest_desc['digest'], 'platform': inspect['Os'] + '/' + inspect['Architecture']}
             saved.unlink()
         write_json(layout / 'oci-layout', {'imageLayoutVersion': '1.0.0'})
         write_json(layout / 'index.json', index)
