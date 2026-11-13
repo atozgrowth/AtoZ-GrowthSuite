@@ -5,10 +5,38 @@ services:
       dockerfile: Dockerfile
     container_name: atoz_backend
     restart: unless-stopped
+    init: true
     env_file:
       - .env
+    environment:
+      NODE_ENV: production
+      DEPLOY_REVISION: ${DEPLOY_REVISION:-untracked}
     expose:
       - "3000"
+    user: node
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 0.75
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    labels:
+      org.opencontainers.image.source: https://github.com/atozgrowth/AtoZ-GrowthSuite
+      org.opencontainers.image.revision: ${DEPLOY_REVISION:-untracked}
     networks:
       - atoz_net
 

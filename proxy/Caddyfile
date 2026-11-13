@@ -1,7 +1,17 @@
 atozgrowth.net, www.atozgrowth.net {
-    respond "AtoZ Growth reverse proxy is running." 200
+    log {
+        output stdout
+        format json
+    }
+    encode zstd gzip
+    reverse_proxy atoz_frontend:8080
 }
 
 api.atozgrowth.net {
+    log {
+        output stdout
+        format json
+    }
+    encode zstd gzip
     reverse_proxy atoz_backend:3000
 }
