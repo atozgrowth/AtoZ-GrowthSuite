@@ -1,6 +1,10 @@
 import json
 import unittest
-from package import validate_runtime_config
+from package import validate_runtime_config, layer_descriptor
+import gzip
+import hashlib
+from pathlib import Path
+import tempfile
 
 
 class RuntimeIdentityTests(unittest.TestCase):
@@ -20,3 +24,19 @@ class RuntimeIdentityTests(unittest.TestCase):
         self.inspect['RootFS']['Layers'] = ['sha256:other']
         with self.assertRaises(AssertionError):
             validate_runtime_config(json.dumps(self.config), self.inspect)
+
+
+class LayerIdentityTests(unittest.TestCase):
+    def test_raw_and_gzip_blobs_have_same_diff_id(self):
+        content = b'synthetic layer tar bytes'
+        expected = 'sha256:' + hashlib.sha256(content).hexdigest()
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'layer'
+            for compressed in [False, True]:
+                data = gzip.compress(content) if compressed else content
+                path.write_bytes(data)
+                desc = layer_descriptor(path, expected)
+                self.assertEqual(desc['digest'], 'sha256:' + hashlib.sha256(data).hexdigest())
+                self.assertEqual(desc['mediaType'].endswith('+gzip'), compressed)
+                with self.assertRaises(AssertionError):
+                    layer_descriptor(path, 'sha256:' + '0' * 64)

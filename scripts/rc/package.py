@@ -46,6 +46,22 @@ def validate_runtime_config(config, inspect):
         assert value.get('config', {}).get(key) == inspect['Config'].get(key), key
 
 
+def layer_descriptor(path, expected_diff_id):
+    # Containerd exports compressed blobs; the classic store exports tar bytes.
+    with path.open('rb') as f:
+        compressed = f.read(2) == b'\x1f\x8b'
+    value = digest_file(path)
+    diff_id = value
+    if compressed:
+        h = hashlib.sha256()
+        with gzip.open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                h.update(chunk)
+        diff_id = h.hexdigest()
+    assert 'sha256:' + diff_id == expected_diff_id, 'Layer diff ID mismatch'
+    return {'mediaType': 'application/vnd.oci.image.layer.v1.tar' + ('+gzip' if compressed else ''), 'digest': 'sha256:' + value, 'size': path.stat().st_size}
+
+
 def main(source, out):
     sha = os.environ['RC_SOURCE_SHA']
     version = os.environ['RC_VERSION']
@@ -80,9 +96,9 @@ def main(source, out):
                     pending = temp / 'layer'
                     with tar.extractfile(name) as incoming, pending.open('wb') as target:
                         shutil.copyfileobj(incoming, target)
-                    value = digest_file(pending)
-                    assert 'sha256:' + value == json.loads(config)['rootfs']['diff_ids'][number]
-                    layers.append({'mediaType': 'application/vnd.oci.image.layer.v1.tar', 'digest': 'sha256:' + value, 'size': pending.stat().st_size})
+                    desc = layer_descriptor(pending, json.loads(config)['rootfs']['diff_ids'][number])
+                    value = desc['digest'].removeprefix('sha256:')
+                    layers.append(desc)
                     destination = blobs / value
                     if destination.exists():
                         pending.unlink()
