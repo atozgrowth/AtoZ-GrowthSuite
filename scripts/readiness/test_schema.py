@@ -125,7 +125,9 @@ try:
     sql('CREATE ROLE fixture_privileged; GRANT TRUNCATE ON public.profiles TO fixture_privileged; GRANT fixture_privileged TO authenticated; GRANT TRIGGER ON public.profiles TO authenticated;')
     rejected(hardening, 'browser privilege hardening blocked')
     assert sql("SELECT has_table_privilege('authenticated','public.profiles','TRIGGER');") == 't' # rollback was atomic
-    sql('ALTER ROLE authenticated NOINHERIT; REVOKE TRIGGER ON public.profiles FROM authenticated;')
+    sql('REVOKE fixture_privileged FROM authenticated; ALTER ROLE authenticated NOINHERIT; GRANT fixture_privileged TO authenticated WITH INHERIT FALSE; REVOKE TRIGGER ON public.profiles FROM authenticated;')
+    assert sql("SELECT has_table_privilege('authenticated','public.profiles','TRUNCATE');") == 'f'
+    assert sql("SELECT pg_has_role('authenticated','fixture_privileged','MEMBER') AND NOT pg_has_role('authenticated','fixture_privileged','USAGE');") == 't'
     rejected(hardening, 'browser privilege hardening blocked')
     sql('REVOKE fixture_privileged FROM authenticated; ALTER ROLE authenticated INHERIT;')
     # Ownership implies capabilities and cannot be removed using REVOKE alone.
