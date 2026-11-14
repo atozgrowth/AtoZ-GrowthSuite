@@ -1,0 +1,471 @@
+{
+  "tool": "Trivy0.76.2",
+  "scope": "OS-only local application image scans, synthetic frontend configuration; NOT production release artifacts",
+  "source_revision_base": "88191d28bb99e938f78f00efd121ab02f1b7d7d2",
+  "working_tree_change_at_scan": "frontend runtime pinned to maintained Nginx1.30.6 digest",
+  "frontend_dockerfile_sha256": "0816eb1d1e2bff31b3fa9861e0e35899a8ac1b12406fc377771a16655fe89bea",
+  "frontend_prior_severity": {
+    "CRITICAL": 4,
+    "HIGH": 78,
+    "MEDIUM": 107,
+    "LOW": 97,
+    "UNKNOWN": 2
+  },
+  "images": [
+    {
+      "name": "atoz-phase2-backend:review",
+      "image_id": "sha256:332a495a1c011d6462f01b1bd01e4ca2fd01ef15a1b83a4be9d3f85616816239",
+      "severity": {
+        "MEDIUM": 1
+      },
+      "findings": [
+        {
+          "id": "CVE-2026-4738",
+          "package": "zlib",
+          "installed": "1.3.2-r1",
+          "fixed": "1.4-r0",
+          "severity": "MEDIUM"
+        }
+      ]
+    },
+    {
+      "name": "atoz-phase2-frontend:review",
+      "image_id": "sha256:b34e29e0e49f45c59c46a2bec97719242179c51cf4c9d386e550bdbbfb4c7f24",
+      "severity": {
+        "CRITICAL": 1,
+        "HIGH": 12,
+        "MEDIUM": 4,
+        "LOW": 44
+      },
+      "findings": [
+        {
+          "id": "CVE-2026-111497",
+          "package": "brotli-libs",
+          "installed": "1.2.0-r1",
+          "fixed": "1.2.1-r0",
+          "severity": "CRITICAL"
+        },
+        {
+          "id": "CVE-2026-92392",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-92388",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "MEDIUM"
+        },
+        {
+          "id": "CVE-2026-107928",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-107929",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86409",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86410",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86411",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86412",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86413",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86414",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86415",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87861",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87862",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87863",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87864",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87865",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87866",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92386",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92387",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92389",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92390",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92391",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-94265",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-94266",
+          "package": "curl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92392",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-92388",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "MEDIUM"
+        },
+        {
+          "id": "CVE-2026-107928",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-107929",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86409",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86410",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86411",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86412",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86413",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86414",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-86415",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87861",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87862",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87863",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87864",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87865",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-87866",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92386",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92387",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92389",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92390",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-92391",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-94265",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-94266",
+          "package": "libcurl",
+          "installed": "8.22.0-r0",
+          "fixed": "8.23.0-r0",
+          "severity": "LOW"
+        },
+        {
+          "id": "CVE-2026-113351",
+          "package": "libexpat",
+          "installed": "2.9.0-r0",
+          "fixed": "2.10.0-r0",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-115506",
+          "package": "libexpat",
+          "installed": "2.9.0-r0",
+          "fixed": "2.10.0-r0",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-117610",
+          "package": "libexpat",
+          "installed": "2.9.0-r0",
+          "fixed": "2.10.0-r0",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-118370",
+          "package": "libexpat",
+          "installed": "2.9.0-r0",
+          "fixed": "2.10.0-r0",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-125350",
+          "package": "libxslt",
+          "installed": "1.1.43-r3",
+          "fixed": "1.1.43-r4",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-87636",
+          "package": "libxslt",
+          "installed": "1.1.43-r3",
+          "fixed": "1.1.43-r4",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-9947",
+          "package": "libxslt",
+          "installed": "1.1.43-r3",
+          "fixed": "1.1.43-r4",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2025-10911",
+          "package": "libxslt",
+          "installed": "1.1.43-r3",
+          "fixed": "1.1.43-r4",
+          "severity": "MEDIUM"
+        },
+        {
+          "id": "CVE-2026-107891",
+          "package": "musl",
+          "installed": "1.2.6-r2",
+          "fixed": "1.2.6-r3",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-107891",
+          "package": "musl-utils",
+          "installed": "1.2.6-r2",
+          "fixed": "1.2.6-r3",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-85091",
+          "package": "zlib",
+          "installed": "1.3.2-r0",
+          "fixed": "1.3.2-r1",
+          "severity": "HIGH"
+        },
+        {
+          "id": "CVE-2026-4738",
+          "package": "zlib",
+          "installed": "1.3.2-r0",
+          "fixed": "1.4-r0",
+          "severity": "MEDIUM"
+        }
+      ]
+    }
+  ]
+}
