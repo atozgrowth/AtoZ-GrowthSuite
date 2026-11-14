@@ -8,6 +8,11 @@ SET LOCAL search_path = pg_catalog;
 DO $baseline$
 DECLARE trigger_function oid; expected record; actual_type text;
 BEGIN
+  IF pg_catalog.to_regclass('public.profiles') IS NOT NULL THEN
+    PERFORM pg_catalog.set_config('atoz.profiles_service_privileges_before',coalesce((SELECT pg_catalog.array_agg(p ORDER BY p) FROM pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','TRIGGER','MAINTAIN','REFERENCES']) p WHERE pg_catalog.has_table_privilege('service_role','public.profiles',p))::text,'{}'),true);
+  ELSE
+    PERFORM pg_catalog.set_config('atoz.profiles_service_privileges_before','fresh-table',true);
+  END IF;
   IF pg_catalog.to_regclass('public.profiles') IS NULL THEN
     CREATE TABLE public.profiles (
       id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -16,6 +21,8 @@ BEGIN
       created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
       updated_at timestamptz NOT NULL DEFAULT pg_catalog.now()
     );
+    -- New-table defaults only; adoption must not alter existing service_role ACLs.
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.profiles TO service_role;
   END IF;
   -- Fail on drift instead of coercing existing data/columns or replacing keys.
   FOR expected IN SELECT * FROM (VALUES ('id','uuid'),('full_name','text'),
@@ -83,9 +90,9 @@ END;
 $baseline$;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.profiles FROM PUBLIC, anon;
-REVOKE DELETE, TRUNCATE, TRIGGER, REFERENCES ON TABLE public.profiles FROM authenticated;
+REVOKE TRUNCATE, TRIGGER, MAINTAIN, REFERENCES ON TABLE public.profiles FROM PUBLIC, anon, authenticated;
+REVOKE DELETE ON TABLE public.profiles FROM authenticated;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.profiles TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.profiles TO service_role;
 -- Keep existing policies. Restrictive guards prevent an existing permissive
 -- policy from broadening ownership. Replace only these repository-owned names.
 DROP POLICY IF EXISTS atoz_profiles_owner_select ON public.profiles;
@@ -104,14 +111,19 @@ DO $verify$
 DECLARE browser text;
 BEGIN
   FOREACH browser IN ARRAY ARRAY['anon','authenticated'] LOOP
-    IF pg_catalog.has_table_privilege(browser,'public.profiles','TRUNCATE,TRIGGER,DELETE')
+    IF pg_catalog.has_table_privilege(browser,'public.profiles','TRUNCATE,TRIGGER,MAINTAIN,REFERENCES,DELETE')
        OR pg_catalog.pg_has_role(browser, (SELECT relowner FROM pg_catalog.pg_class WHERE oid='public.profiles'::regclass), 'MEMBER')
        OR EXISTS (SELECT 1 FROM pg_catalog.pg_roles r
                   WHERE pg_catalog.pg_has_role(browser,r.oid,'MEMBER')
-                  AND (r.rolsuper OR r.rolbypassrls OR pg_catalog.has_table_privilege(r.oid,'public.profiles','TRUNCATE,TRIGGER,DELETE'))) THEN
+                  AND (r.rolsuper OR r.rolbypassrls OR pg_catalog.has_table_privilege(r.oid,'public.profiles','TRUNCATE,TRIGGER,MAINTAIN,REFERENCES,DELETE'))) THEN
       RAISE EXCEPTION 'Profiles baseline blocked: browser effective/inherited/owner capability remains';
     END IF;
   END LOOP;
+  IF pg_catalog.current_setting('atoz.profiles_service_privileges_before') <> 'fresh-table'
+     AND pg_catalog.current_setting('atoz.profiles_service_privileges_before')
+         IS DISTINCT FROM coalesce((SELECT pg_catalog.array_agg(p ORDER BY p) FROM pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','TRIGGER','MAINTAIN','REFERENCES']) p WHERE pg_catalog.has_table_privilege('service_role','public.profiles',p))::text,'{}') THEN
+    RAISE EXCEPTION 'Profiles baseline blocked: PUBLIC revoke would change service_role effective privileges';
+  END IF;
 END;
 $verify$;
 COMMIT;

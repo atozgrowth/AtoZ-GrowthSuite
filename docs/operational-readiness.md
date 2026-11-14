@@ -9,7 +9,7 @@ Execution in this task uses repository code, synthetic browser/HTTP fixtures and
 
 | Contract | Repository evidence | Readiness |
 | --- | --- | --- |
-| `public.profiles` id/full_name/avatar_url/created_at/updated_at | Owner-supplied live evidence confirms table, columns, id PK/FK, owner policies and signup trigger. Two new proposed repository migrations cover privilege hardening and guarded baseline/adoption | **Production blocker**: effective authenticated TRUNCATE/TRIGGER remains live; exact provisioning body review and separately authorized remediation still required |
+| `public.profiles` id/full_name/avatar_url/created_at/updated_at | Owner-supplied live evidence confirms table, columns, id PK/FK, owner policies and signup trigger. Two new proposed repository migrations cover privilege hardening and guarded baseline/adoption | **Production blocker**: effective authenticated TRUNCATE/TRIGGER/MAINTAIN/REFERENCES remains live; exact provisioning body review and separately authorized remediation still required |
 | `public.wordpress_site_connections` | Base/grant/lifecycle migrations; owner SELECT RLS; authenticated SELECT only; service writes | Offline verified; owner-supplied evidence confirms deployed RLS enabled; full policy semantics still need bounded review |
 | `private.wordpress_pairing_challenges` | Lifecycle migration; digest/expiry/consumption, service-only access | Offline verified |
 | `public.wordpress_action_requests`, `private.wordpress_action_payloads`, `public.wordpress_action_audit_events` | Controlled-action foundation migration; owner public reads, private payload isolation, append-only audit | Offline verified; writes remain disabled by default |

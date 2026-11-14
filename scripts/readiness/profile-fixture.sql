@@ -5,7 +5,9 @@ CREATE TABLE public.profiles (
  fixture_extra text DEFAULT 'preserve-me'
 );
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT, UPDATE, TRUNCATE, TRIGGER ON public.profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, TRUNCATE, TRIGGER, MAINTAIN, REFERENCES ON public.profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER, MAINTAIN, REFERENCES ON public.profiles TO service_role;
+GRANT SELECT ON public.profiles TO service_role WITH GRANT OPTION;
 CREATE POLICY fixture_owner_select ON public.profiles FOR SELECT TO authenticated USING (auth.uid()=id);
 CREATE POLICY fixture_owner_insert ON public.profiles FOR INSERT TO authenticated WITH CHECK (auth.uid()=id);
 CREATE POLICY fixture_owner_update ON public.profiles FOR UPDATE TO authenticated USING (auth.uid()=id) WITH CHECK (auth.uid()=id);

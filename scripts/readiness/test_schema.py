@@ -23,6 +23,7 @@ try:
         except subprocess.CalledProcessError:
             if attempt == 29: raise
             time.sleep(1)
+    assert 170000 <= int(sql('SHOW server_version_num;')) < 180000
     sql((root/'scripts/readiness/bootstrap-fixture.sql').read_text())
     migrations = sorted((root/'backend/supabase/migrations').glob('*.sql'))
     for number, migration in enumerate(migrations):
@@ -78,7 +79,7 @@ try:
     denied('SET ROLE anon; SELECT * FROM public.profiles;')
     def safe_privileges():
         for browser in ['anon','authenticated']:
-            for privilege in ['TRUNCATE','TRIGGER','DELETE']:
+            for privilege in ['TRUNCATE','TRIGGER','MAINTAIN','REFERENCES','DELETE']:
                 assert sql(f"SELECT has_table_privilege('{browser}','public.profiles','{privilege}');") == 'f'
     safe_privileges()
     hardening = next(m for m in migrations if 'harden_profiles_browser' in m.name).read_text()
@@ -94,6 +95,9 @@ try:
     database = 'existing_fixture'
     sql((root/'scripts/readiness/bootstrap-fixture.sql').read_text())
     sql((root/'scripts/readiness/profile-fixture.sql').read_text())
+    def service_acl():
+        return sql("SELECT coalesce(jsonb_agg(jsonb_build_array(privilege_type,is_grantable) ORDER BY privilege_type,is_grantable),'[]') FROM aclexplode((SELECT relacl FROM pg_class WHERE oid='public.profiles'::regclass)) WHERE grantee=(SELECT oid FROM pg_roles WHERE rolname='service_role');")
+    original_service_acl = service_acl()
     original_hash = sql("SELECT md5(pg_get_functiondef('public.handle_new_user()'::regprocedure));")
     assert sql("SELECT has_table_privilege('authenticated','public.profiles','TRUNCATE');") == 't'
     sql(hardening)
@@ -107,6 +111,7 @@ try:
     sql(attest() + baseline)
     sql(attest() + baseline)
     assert sql("SELECT md5(pg_get_functiondef('public.handle_new_user()'::regprocedure));") == original_hash
+    assert service_acl() == original_service_acl
     assert sql("SELECT fixture_extra FROM public.profiles;") == 'preserve-me'
     sql("INSERT INTO auth.users(id) VALUES ('30000000-0000-4000-8000-000000000002');")
     assert sql("SELECT count(*) FROM public.profiles;") == '2'
@@ -116,26 +121,54 @@ try:
     assert sql(owner + 'SELECT count(*) FROM public.profiles;') == '1'
     rejected(owner + "INSERT INTO public.profiles(id) VALUES ('10000000-0000-4000-8000-000000000002');", 'row-level security')
     # Direct/PUBLIC revokes are successful, repeatable, and preserve necessary DML.
-    sql('GRANT TRUNCATE,TRIGGER ON public.profiles TO PUBLIC;')
+    sql('GRANT TRUNCATE,TRIGGER,MAINTAIN,REFERENCES ON public.profiles TO PUBLIC,anon,authenticated;')
+    sql(hardening)
     sql(hardening)
     safe_privileges()
+    sql('GRANT TRUNCATE,TRIGGER,MAINTAIN,REFERENCES ON public.profiles TO PUBLIC,anon,authenticated;')
+    sql(attest() + baseline)
+    sql(attest() + baseline)
+    safe_privileges()
+    assert service_acl() == original_service_acl
     for privilege in ['SELECT','INSERT','UPDATE']:
         assert sql(f"SELECT has_table_privilege('authenticated','public.profiles','{privilege}');") == 't'
-    # Inherited and NOINHERIT membership grants cannot be fixed with a leaf revoke.
-    sql('CREATE ROLE fixture_privileged; GRANT TRUNCATE ON public.profiles TO fixture_privileged; GRANT fixture_privileged TO authenticated; GRANT TRIGGER ON public.profiles TO authenticated;')
-    rejected(hardening, 'browser privilege hardening blocked')
-    assert sql("SELECT has_table_privilege('authenticated','public.profiles','TRIGGER');") == 't' # rollback was atomic
-    sql('REVOKE fixture_privileged FROM authenticated; ALTER ROLE authenticated NOINHERIT; GRANT fixture_privileged TO authenticated WITH INHERIT FALSE; REVOKE TRIGGER ON public.profiles FROM authenticated;')
-    assert sql("SELECT has_table_privilege('authenticated','public.profiles','TRUNCATE');") == 'f'
-    assert sql("SELECT pg_has_role('authenticated','fixture_privileged','MEMBER') AND NOT pg_has_role('authenticated','fixture_privileged','USAGE');") == 't'
-    rejected(hardening, 'browser privilege hardening blocked')
-    sql('REVOKE fixture_privileged FROM authenticated; ALTER ROLE authenticated INHERIT;')
+    # Exercise each capability independently: a comma-list assertion alone can
+    # hide a missing privilege in implementation or fixture setup.
+    sql('CREATE ROLE fixture_privileged;')
+    for privilege in ['TRUNCATE','TRIGGER','MAINTAIN','REFERENCES']:
+        sql(f'GRANT {privilege} ON public.profiles TO fixture_privileged; GRANT fixture_privileged TO authenticated; GRANT TRIGGER ON public.profiles TO authenticated;')
+        rejected(hardening, 'browser privilege hardening blocked')
+        rejected(attest() + baseline, 'browser effective/inherited/owner capability remains')
+        assert sql("SELECT has_table_privilege('authenticated','public.profiles','TRIGGER');") == 't' # atomic rollback
+        sql('REVOKE fixture_privileged FROM authenticated; ALTER ROLE authenticated NOINHERIT; GRANT fixture_privileged TO authenticated WITH INHERIT FALSE; REVOKE TRIGGER ON public.profiles FROM authenticated;')
+        assert sql(f"SELECT has_table_privilege('authenticated','public.profiles','{privilege}');") == 'f'
+        assert sql("SELECT pg_has_role('authenticated','fixture_privileged','MEMBER') AND NOT pg_has_role('authenticated','fixture_privileged','USAGE');") == 't'
+        rejected(hardening, 'browser privilege hardening blocked')
+        rejected(attest() + baseline, 'browser effective/inherited/owner capability remains')
+        sql(f'REVOKE fixture_privileged FROM authenticated; ALTER ROLE authenticated INHERIT; REVOKE {privilege} ON public.profiles FROM fixture_privileged;')
+    assert service_acl() == original_service_acl
     # Ownership implies capabilities and cannot be removed using REVOKE alone.
     sql('ALTER TABLE public.profiles OWNER TO authenticated;')
     rejected(hardening, 'browser privilege hardening blocked')
+    rejected(attest() + baseline, 'browser effective/inherited/owner capability remains')
     sql('ALTER TABLE public.profiles OWNER TO postgres;')
     sql(hardening)
     safe_privileges()
+    # Never compensate silently for service_role capabilities sourced from PUBLIC.
+    sql('REVOKE MAINTAIN ON public.profiles FROM service_role; GRANT MAINTAIN ON public.profiles TO PUBLIC;')
+    rejected(hardening, 'PUBLIC revoke would change service_role effective privileges')
+    rejected(attest() + baseline, 'PUBLIC revoke would change service_role effective privileges')
+    assert sql("SELECT has_table_privilege('authenticated','public.profiles','MAINTAIN');") == 't' # whole transaction rolled back
+    sql('GRANT MAINTAIN ON public.profiles TO service_role; REVOKE MAINTAIN ON public.profiles FROM PUBLIC;')
+    safe_privileges()
+    # Dependent grants require an explicit separate decision; no implicit CASCADE.
+    sql('CREATE ROLE fixture_delegate; GRANT REFERENCES ON public.profiles TO authenticated WITH GRANT OPTION; SET ROLE authenticated; GRANT REFERENCES ON public.profiles TO fixture_delegate; RESET ROLE;')
+    rejected(hardening, 'dependent privileges exist')
+    rejected(attest() + baseline, 'dependent privileges exist')
+    assert sql("SELECT has_table_privilege('fixture_delegate','public.profiles','REFERENCES');") == 't'
+    sql('SET ROLE authenticated; REVOKE REFERENCES ON public.profiles FROM fixture_delegate; RESET ROLE; REVOKE REFERENCES ON public.profiles FROM authenticated;')
+    safe_privileges()
+    assert service_acl() == original_service_acl
     # Incompatible column types fail closed without coercion/data rewrites.
     sql('ALTER TABLE public.profiles ALTER COLUMN avatar_url TYPE varchar(200);')
     rejected(attest() + baseline, 'required column type mismatch')

@@ -30,6 +30,8 @@ SET LOCAL statement_timeout = '10s';
 SELECT r.rolname AS browser_role,
        pg_catalog.has_table_privilege(r.oid,'public.profiles','TRUNCATE') AS can_truncate,
        pg_catalog.has_table_privilege(r.oid,'public.profiles','TRIGGER') AS can_trigger,
+       pg_catalog.has_table_privilege(r.oid,'public.profiles','MAINTAIN') AS can_maintain,
+       pg_catalog.has_table_privilege(r.oid,'public.profiles','REFERENCES') AS can_reference,
        pg_catalog.has_table_privilege(r.oid,'public.profiles','DELETE') AS can_delete,
        pg_catalog.has_schema_privilege(r.oid,'public','CREATE') AS can_create_public_objects
 FROM pg_catalog.pg_roles r WHERE r.rolname IN ('anon','authenticated');
