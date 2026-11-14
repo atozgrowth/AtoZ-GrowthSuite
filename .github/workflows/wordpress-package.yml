@@ -34,3 +34,13 @@ jobs:
           path: plugin-package/
           if-no-files-found: error
           retention-days: 30
+      - name: Download the immutable workflow artifact again
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wordpress-plugin-0.4.1-${{ github.event.pull_request.head.sha || github.sha }}
+          path: downloaded-plugin-package/
+      - name: Verify actual downloaded archive and source checksums
+        run: |
+          python3 scripts/wordpress/package_plugin.py --output downloaded-plugin-package --verify
+          cd downloaded-plugin-package
+          sha256sum -c SHA256SUMS

@@ -19,21 +19,26 @@ function isPrivateIpv4(address: string) {
 }
 function isPrivateIpv6(address: string) {
   const normalized = address.toLowerCase();
-  if (normalized === "::" || normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") || /^fe[89ab]/.test(normalized) || normalized.startsWith("ff") || normalized.startsWith("2001:db8:")) return true;
-  const mapped = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  return mapped ? isPrivateIpv4(mapped[1]) : false;
+  if (normalized.includes("%")) return true;
+  const [first, second] = normalized.split(":").map(part => Number.parseInt(part || "0", 16));
+  // Conservative native global-unicast policy. Reject mapped/compatible IPv4,
+  // NAT64, local, multicast and translation/tunneling forms rather than trying
+  // to infer the destination of every special IPv6 encoding.
+  if ((first & 0xe000) !== 0x2000) return true;
+  return (first === 0x2001 && (second <= 0x1ff || second === 0xdb8)) ||
+    first === 0x2002 || first === 0x3ffe || first === 0x3fff;
 }
-function isPublicAddress(address: string) {
+export function isPublicWordPressAddress(address: string) {
   const family = isIP(address);
   return family === 4 ? !isPrivateIpv4(address) : family === 6 ? !isPrivateIpv6(address) : false;
 }
 async function resolvePublicAddress(hostname: string) {
   if (isIP(hostname)) {
-    if (!isPublicAddress(hostname)) throw new Error("private address rejected");
+    if (!isPublicWordPressAddress(hostname)) throw new Error("private address rejected");
     return { address: hostname, family: isIP(hostname) as 4 | 6 };
   }
   const addresses = await lookup(hostname, { all: true, verbatim: true });
-  const selected = addresses.find((entry) => isPublicAddress(entry.address));
+  const selected = addresses.find((entry) => isPublicWordPressAddress(entry.address));
   if (!selected) throw new Error("no public address");
   return selected;
 }

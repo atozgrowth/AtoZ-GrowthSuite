@@ -39,6 +39,10 @@ def build(output):
 def verify(output):
     manifest = json.loads((output/'manifest.json').read_text())
     archive = output/manifest['archive']
+    revision = subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+    expected_files = {SLUG + '/' + p.relative_to(SOURCE).as_posix(): digest(p.read_bytes()) for p in SOURCE.rglob('*') if p.is_file()}
+    if manifest['source_revision'] != revision or manifest['files'] != expected_files:
+        raise ValueError('Downloaded package does not match checked-out source revision/files')
     if archive.name != manifest['archive'] or digest(archive.read_bytes()) != manifest['sha256']:
         raise ValueError('Archive checksum mismatch')
     with zipfile.ZipFile(archive) as package:

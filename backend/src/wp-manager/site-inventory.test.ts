@@ -74,6 +74,7 @@ test("inventory routes reject unauthenticated requests and expose no mutation me
   const getResponse = await app.inject({ method: "GET", url: `/api/wp-manager/sites/${connection.id}/posts` });
   assert.equal(getResponse.statusCode, 401);
   for (const resource of ["posts", "pages", "media", "plugins", "themes"]) {
+    assert.equal((await app.inject({ method: "GET", url: `/api/wp-manager/sites/${connection.id}/${resource}` })).statusCode, 401);
     for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
       const result = await app.inject({ method, url: `/api/wp-manager/sites/${connection.id}/${resource}` });
       assert.equal(result.statusCode, 404);
