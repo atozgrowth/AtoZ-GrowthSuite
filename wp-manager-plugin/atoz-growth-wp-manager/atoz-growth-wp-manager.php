@@ -3,7 +3,7 @@
  * Plugin Name: A to Z Growth WP Manager
  * Plugin URI: https://atozgrowth.net/
  * Description: Secure WordPress connector for the A to Z Growth business automation platform.
- * Version: 0.4.0
+ * Version: 0.4.1
  * Author: A to Z Growth
  * Author URI: https://atozgrowth.net/
  * Text Domain: atoz-growth-wp-manager
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'ATOZ_GROWTH_WP_MANAGER_VERSION', '0.4.0' );
+define( 'ATOZ_GROWTH_WP_MANAGER_VERSION', '0.4.1' );
 define( 'ATOZ_GROWTH_WP_MANAGER_FILE', __FILE__ );
 define( 'ATOZ_GROWTH_WP_MANAGER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'ATOZ_GROWTH_WP_MANAGER_URL', plugin_dir_url( __FILE__ ) );

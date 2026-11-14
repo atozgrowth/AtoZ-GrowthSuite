@@ -19,21 +19,26 @@ function isPrivateIpv4(address: string) {
 }
 function isPrivateIpv6(address: string) {
   const normalized = address.toLowerCase();
-  if (normalized === "::" || normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") || /^fe[89ab]/.test(normalized) || normalized.startsWith("ff") || normalized.startsWith("2001:db8:")) return true;
-  const mapped = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  return mapped ? isPrivateIpv4(mapped[1]) : false;
+  if (normalized.includes("%")) return true;
+  const [first, second] = normalized.split(":").map(part => Number.parseInt(part || "0", 16));
+  // Conservative native global-unicast policy. Reject mapped/compatible IPv4,
+  // NAT64, local, multicast and translation/tunneling forms rather than trying
+  // to infer the destination of every special IPv6 encoding.
+  if ((first & 0xe000) !== 0x2000) return true;
+  return (first === 0x2001 && (second <= 0x1ff || second === 0xdb8)) ||
+    first === 0x2002 || first === 0x3ffe || first === 0x3fff;
 }
-function isPublicAddress(address: string) {
+export function isPublicWordPressAddress(address: string) {
   const family = isIP(address);
   return family === 4 ? !isPrivateIpv4(address) : family === 6 ? !isPrivateIpv6(address) : false;
 }
 async function resolvePublicAddress(hostname: string) {
   if (isIP(hostname)) {
-    if (!isPublicAddress(hostname)) throw new Error("private address rejected");
+    if (!isPublicWordPressAddress(hostname)) throw new Error("private address rejected");
     return { address: hostname, family: isIP(hostname) as 4 | 6 };
   }
   const addresses = await lookup(hostname, { all: true, verbatim: true });
-  const selected = addresses.find((entry) => isPublicAddress(entry.address));
+  const selected = addresses.find((entry) => isPublicWordPressAddress(entry.address));
   if (!selected) throw new Error("no public address");
   return selected;
 }
@@ -42,22 +47,34 @@ function siteReadUrl(siteUrl: string, resource: "inspection" | InventoryResource
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) throw new Error("invalid read origin");
   url.pathname = url.pathname.replace(/\/+$/, "") + `/wp-json/atoz-growth/v1/${resource}`;
   url.search = "";
-  if (resource !== "inspection" && resource !== "plugins") {
+  if (resource !== "inspection" && resource !== "plugins" && resource !== "themes") {
     url.searchParams.set("page", String(page));
     url.searchParams.set("per_page", String(perPage));
   }
   url.hash = "";
   return url;
 }
+/** URL.hostname brackets IPv6 literals; DNS/IP/TLS verification require raw host. */
+export function wordPressTlsIdentity(url: URL) {
+  const certificateHost = url.hostname.startsWith("[") && url.hostname.endsWith("]")
+    ? url.hostname.slice(1, -1) : url.hostname;
+  return {
+    certificateHost,
+    // RFC 6066 SNI is for DNS names, never IPv4/IPv6 address literals.
+    servername: isIP(certificateHost) ? undefined : certificateHost,
+    hostHeader: url.host,
+  };
+}
 async function requestJson(url: URL, grant: string): Promise<unknown> {
-  const resolved = await resolvePublicAddress(url.hostname);
+  const identity = wordPressTlsIdentity(url);
+  const resolved = await resolvePublicAddress(identity.certificateHost);
   return new Promise((resolve, reject) => {
     const req = request({
       protocol: "https:", hostname: resolved.address, family: resolved.family, port: 443,
-      method: "GET", path: url.pathname + url.search, servername: url.hostname,
+      method: "GET", path: url.pathname + url.search, servername: identity.servername,
       rejectUnauthorized: true,
-      checkServerIdentity: (_hostname, certificate) => checkServerIdentity(url.hostname, certificate),
-      headers: { Accept: "application/json", Host: url.host, "User-Agent": "AtoZ-Growth-WP-Manager/0.2", "X-AtoZ-Inspection-Grant": grant },
+      checkServerIdentity: (_hostname, certificate) => checkServerIdentity(identity.certificateHost, certificate),
+      headers: { Accept: "application/json", Host: identity.hostHeader, "User-Agent": "AtoZ-Growth-WP-Manager/0.2", "X-AtoZ-Inspection-Grant": grant },
     }, (response) => {
       if (response.statusCode !== 200) { response.resume(); reject(new Error("wordpress read rejected")); return; }
       const contentType = String(response.headers["content-type"] ?? "");
