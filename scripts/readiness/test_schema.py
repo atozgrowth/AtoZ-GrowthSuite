@@ -161,6 +161,25 @@ try:
     assert sql("SELECT has_table_privilege('authenticated','public.profiles','MAINTAIN');") == 't' # whole transaction rolled back
     sql('GRANT MAINTAIN ON public.profiles TO service_role; REVOKE MAINTAIN ON public.profiles FROM PUBLIC;')
     safe_privileges()
+    # A column-only REFERENCES grant is invisible to has_table_privilege.
+    # PostgreSQL 17 table REVOKE clears direct column grants, but inherited
+    # column-only grants must fail closed for explicit source-role review.
+    sql('GRANT REFERENCES(id) ON public.profiles TO authenticated;')
+    assert sql("SELECT NOT has_table_privilege('authenticated','public.profiles','REFERENCES') AND has_any_column_privilege('authenticated','public.profiles','REFERENCES');") == 't'
+    sql(hardening)
+    assert sql("SELECT has_any_column_privilege('authenticated','public.profiles','REFERENCES');") == 'f'
+    sql('GRANT REFERENCES(id) ON public.profiles TO fixture_privileged; GRANT fixture_privileged TO authenticated;')
+    rejected(hardening, 'browser privilege hardening blocked')
+    rejected(attest() + baseline, 'browser effective/inherited/owner capability remains')
+    sql('REVOKE fixture_privileged FROM authenticated; REVOKE REFERENCES(id) ON public.profiles FROM fixture_privileged;')
+    safe_privileges()
+    # PUBLIC-sourced column-only service privileges must also be preserved.
+    sql('REVOKE REFERENCES ON public.profiles FROM service_role; GRANT REFERENCES(id) ON public.profiles TO PUBLIC;')
+    assert sql("SELECT NOT has_table_privilege('service_role','public.profiles','REFERENCES') AND has_any_column_privilege('service_role','public.profiles','REFERENCES');") == 't'
+    rejected(hardening, 'PUBLIC revoke would change service_role effective privileges')
+    rejected(attest() + baseline, 'PUBLIC revoke would change service_role effective privileges')
+    sql('GRANT REFERENCES ON public.profiles TO service_role; REVOKE REFERENCES(id) ON public.profiles FROM PUBLIC;')
+    safe_privileges()
     # Dependent grants require an explicit separate decision; no implicit CASCADE.
     sql('CREATE ROLE fixture_delegate; GRANT REFERENCES ON public.profiles TO authenticated WITH GRANT OPTION; SET ROLE authenticated; GRANT REFERENCES ON public.profiles TO fixture_delegate; RESET ROLE;')
     rejected(hardening, 'dependent privileges exist')

@@ -9,7 +9,17 @@ DO $baseline$
 DECLARE trigger_function oid; expected record; actual_type text;
 BEGIN
   IF pg_catalog.to_regclass('public.profiles') IS NOT NULL THEN
-    PERFORM pg_catalog.set_config('atoz.profiles_service_privileges_before',coalesce((SELECT pg_catalog.array_agg(p ORDER BY p) FROM pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','TRIGGER','MAINTAIN','REFERENCES']) p WHERE pg_catalog.has_table_privilege('service_role','public.profiles',p))::text,'{}'),true);
+    PERFORM pg_catalog.set_config('atoz.profiles_service_privileges_before',coalesce((SELECT pg_catalog.array_agg(capability ORDER BY capability) FROM (
+      SELECT 'table:' || p AS capability
+      FROM pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','TRIGGER','MAINTAIN','REFERENCES']) p
+      WHERE pg_catalog.has_table_privilege('service_role','public.profiles',p)
+      UNION ALL
+      SELECT 'column:' || a.attnum::text || ':' || p AS capability
+      FROM pg_catalog.pg_attribute a
+      CROSS JOIN pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) p
+      WHERE a.attrelid='public.profiles'::regclass AND a.attnum>0 AND NOT a.attisdropped
+        AND pg_catalog.has_column_privilege('service_role','public.profiles',a.attnum,p)
+    ) AS effective_capabilities)::text,'{}'),true);
   ELSE
     PERFORM pg_catalog.set_config('atoz.profiles_service_privileges_before','fresh-table',true);
   END IF;
@@ -112,16 +122,27 @@ DECLARE browser text;
 BEGIN
   FOREACH browser IN ARRAY ARRAY['anon','authenticated'] LOOP
     IF pg_catalog.has_table_privilege(browser,'public.profiles','TRUNCATE,TRIGGER,MAINTAIN,REFERENCES,DELETE')
+       OR pg_catalog.has_any_column_privilege(browser,'public.profiles','REFERENCES')
        OR pg_catalog.pg_has_role(browser, (SELECT relowner FROM pg_catalog.pg_class WHERE oid='public.profiles'::regclass), 'MEMBER')
        OR EXISTS (SELECT 1 FROM pg_catalog.pg_roles r
                   WHERE pg_catalog.pg_has_role(browser,r.oid,'MEMBER')
-                  AND (r.rolsuper OR r.rolbypassrls OR pg_catalog.has_table_privilege(r.oid,'public.profiles','TRUNCATE,TRIGGER,MAINTAIN,REFERENCES,DELETE'))) THEN
+                  AND (r.rolsuper OR r.rolbypassrls OR pg_catalog.has_any_column_privilege(r.oid,'public.profiles','REFERENCES') OR pg_catalog.has_table_privilege(r.oid,'public.profiles','TRUNCATE,TRIGGER,MAINTAIN,REFERENCES,DELETE'))) THEN
       RAISE EXCEPTION 'Profiles baseline blocked: browser effective/inherited/owner capability remains';
     END IF;
   END LOOP;
   IF pg_catalog.current_setting('atoz.profiles_service_privileges_before') <> 'fresh-table'
      AND pg_catalog.current_setting('atoz.profiles_service_privileges_before')
-         IS DISTINCT FROM coalesce((SELECT pg_catalog.array_agg(p ORDER BY p) FROM pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','TRIGGER','MAINTAIN','REFERENCES']) p WHERE pg_catalog.has_table_privilege('service_role','public.profiles',p))::text,'{}') THEN
+         IS DISTINCT FROM coalesce((SELECT pg_catalog.array_agg(capability ORDER BY capability) FROM (
+      SELECT 'table:' || p AS capability
+      FROM pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','TRIGGER','MAINTAIN','REFERENCES']) p
+      WHERE pg_catalog.has_table_privilege('service_role','public.profiles',p)
+      UNION ALL
+      SELECT 'column:' || a.attnum::text || ':' || p AS capability
+      FROM pg_catalog.pg_attribute a
+      CROSS JOIN pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) p
+      WHERE a.attrelid='public.profiles'::regclass AND a.attnum>0 AND NOT a.attisdropped
+        AND pg_catalog.has_column_privilege('service_role','public.profiles',a.attnum,p)
+    ) AS effective_capabilities)::text,'{}') THEN
     RAISE EXCEPTION 'Profiles baseline blocked: PUBLIC revoke would change service_role effective privileges';
   END IF;
 END;
