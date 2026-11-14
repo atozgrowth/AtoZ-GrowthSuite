@@ -1,0 +1,105 @@
+{
+  "tables": {
+    "public.profiles": [
+      "id",
+      "full_name",
+      "avatar_url",
+      "created_at",
+      "updated_at"
+    ],
+    "public.wordpress_site_connections": [
+      "id",
+      "user_id",
+      "site_url",
+      "site_id",
+      "status",
+      "created_at",
+      "updated_at",
+      "connected_at",
+      "revoked_at"
+    ],
+    "private.wordpress_pairing_challenges": [
+      "id",
+      "connection_id",
+      "challenge_digest",
+      "created_at",
+      "expires_at",
+      "consumed_at"
+    ],
+    "public.wordpress_action_requests": [
+      "id",
+      "user_id",
+      "connection_id",
+      "site_id",
+      "site_url",
+      "action_type",
+      "status",
+      "payload_digest",
+      "actor_source",
+      "created_at",
+      "expires_at",
+      "approved_at",
+      "executing_at",
+      "execution_consumed_at",
+      "completed_at",
+      "result_post_id",
+      "failure_code"
+    ],
+    "private.wordpress_action_payloads": [
+      "action_id",
+      "payload",
+      "payload_digest",
+      "created_at"
+    ],
+    "public.wordpress_action_audit_events": [
+      "id",
+      "action_id",
+      "user_id",
+      "connection_id",
+      "action_type",
+      "event_type",
+      "actor_source",
+      "occurred_at"
+    ]
+  },
+  "rpcs": {
+    "wp_manager_create_pairing_challenge": [
+      "p_connection_id",
+      "p_user_id",
+      "p_challenge_digest",
+      "p_expires_at"
+    ],
+    "wp_manager_confirm_pairing_challenge": [
+      "p_connection_id",
+      "p_site_id",
+      "p_site_url",
+      "p_challenge_digest"
+    ],
+    "wp_manager_create_action_request": [
+      "p_user_id",
+      "p_connection_id",
+      "p_action_type",
+      "p_payload_digest",
+      "p_payload",
+      "p_actor_source",
+      "p_created_at",
+      "p_expires_at"
+    ],
+    "wp_manager_get_action_payload": [
+      "p_action_id",
+      "p_user_id"
+    ],
+    "wp_manager_approve_action_request": [
+      "p_action_id",
+      "p_user_id",
+      "p_payload_digest",
+      "p_now"
+    ],
+    "wp_manager_cancel_action_request": [
+      "p_action_id",
+      "p_user_id",
+      "p_now"
+    ]
+  },
+  "known_repository_gaps": []
+}

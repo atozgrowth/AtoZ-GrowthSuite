@@ -4,9 +4,13 @@ export function checkStaging(env) {
   if (!staging || !production || staging === production) {
     throw new Error("Distinct, verified staging and production Supabase project refs are required.");
   }
-  const url = new URL(env.VITE_SUPABASE_URL || env.SUPABASE_URL || "");
-  if (url.origin !== `https://${staging}.supabase.co` || url.pathname !== "/" || url.search || url.hash || url.username || url.password) {
-    throw new Error("Supabase URL must match the verified staging project.");
+  const urls = [env.VITE_SUPABASE_URL, env.SUPABASE_URL].filter(value => value !== undefined);
+  if (!urls.length) throw new Error("A staging Supabase URL is required.");
+  for (const value of urls) {
+    const url = new URL(value);
+    if (url.origin !== `https://${staging}.supabase.co` || url.pathname !== "/" || url.search || url.hash || url.username || url.password) {
+      throw new Error("Every Supabase URL must match the verified staging project.");
+    }
   }
   if (!(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY)) {
     throw new Error("A staging public Supabase key is required.");

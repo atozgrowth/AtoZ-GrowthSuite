@@ -5,6 +5,11 @@ services:
       dockerfile: Dockerfile
     container_name: atoz_backend
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     init: true
     env_file:
       - .env
@@ -29,7 +34,7 @@ services:
         - CMD
         - node
         - -e
-        - "fetch('http://127.0.0.1:3000/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
+        - "fetch('http://127.0.0.1:3000/health').then(async response => { if (!response.ok || (await response.json()).status !== 'running') process.exit(1); }).catch(() => process.exit(1))"
       interval: 30s
       timeout: 5s
       start_period: 15s

@@ -13,3 +13,8 @@ test("bad IDs, duplicate records, unsafe URLs and non-connected rows reject the 
   assert.throws(() => parseConnectedSites({ sites: [record, record] }));
   for (const value of [null, {}, { sites: null }]) assert.throws(() => parseConnectedSites(value));
 });
+test("historical inventory retains null site identity without inventing an inspection binding", () => {
+  const legacy = { ...record, site_id: null, status: "connected", connected_at: "2026-01-01T00:00:00Z" };
+  assert.deepEqual(parseConnectedSites([legacy]), [{ ...record, site_url: record.site_url + "/", status: "connected" }]);
+  assert.throws(() => parseConnectedSites([{ ...legacy, site_url: "http://legacy.example.test" }]));
+});

@@ -1,0 +1,17 @@
+name: Offline operational readiness
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  database-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Verify read-only probe safety without live execution
+        run: python3 -m unittest discover -s scripts/readiness -p 'test_readonly.py'
+      - name: Apply migrations only to isolated synthetic PostgreSQL
+        run: python3 scripts/readiness/test_schema.py
