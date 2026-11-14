@@ -78,7 +78,8 @@ class ATOZ_Growth_REST_API {
                 'success' => true,
                 'service' => 'A to Z Growth WP Manager',
                 'version' => ATOZ_GROWTH_WP_MANAGER_VERSION,
-                'mode'    => 'read-only',
+                'mode'    => ATOZ_Growth_Endpoints::writes_enabled() ? 'isolated-drafts' : 'read-only',
+                'publishing_enabled' => false,
             )
         );
     }
@@ -130,8 +131,10 @@ class ATOZ_Growth_REST_API {
             );
         }
 
+        $endpoint = ATOZ_Growth_Endpoints::endpoint( 'inspection/authorize' );
+        if ( is_wp_error( $endpoint ) ) { return $endpoint; }
         $response = wp_remote_post(
-            self::INSPECTION_AUTHORIZE_ENDPOINT,
+            $endpoint,
             array(
                 'timeout'     => 8,
                 'redirection' => 0,
@@ -301,7 +304,9 @@ class ATOZ_Growth_REST_API {
             $body['page'] = (int) $request->get_param( 'page' );
             $body['per_page'] = (int) $request->get_param( 'per_page' );
         }
-        $response = wp_remote_post( self::INSPECTION_AUTHORIZE_ENDPOINT, array(
+        $endpoint = ATOZ_Growth_Endpoints::endpoint( 'inspection/authorize' );
+        if ( is_wp_error( $endpoint ) ) { return $endpoint; }
+        $response = wp_remote_post( $endpoint, array(
             'timeout' => 8, 'redirection' => 0,
             'headers' => array( 'Accept' => 'application/json', 'Content-Type' => 'application/json' ),
             'body' => wp_json_encode( $body ), 'data_format' => 'body',

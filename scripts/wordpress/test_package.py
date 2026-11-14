@@ -7,7 +7,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
             one=build(Path(first)); two=build(Path(second))
             self.assertEqual(one['sha256'],two['sha256'])
-            self.assertEqual(verify(Path(first))['version'],'0.4.1')
+            self.assertEqual(verify(Path(first))['version'],'0.5.0')
             self.assertIn('atoz-growth-wp-manager/atoz-growth-wp-manager.php',one['files'])
     def test_tampered_zip_rejected(self):
         with tempfile.TemporaryDirectory() as location:

@@ -93,6 +93,7 @@ export function WordPressActionApprovalPanel({
   const mutationLock = useRef(false);
 
   useEffect(() => {
+    mounted.current = true;
     return () => {
       mounted.current = false;
     };

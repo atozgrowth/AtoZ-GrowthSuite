@@ -152,10 +152,12 @@ class ATOZ_Growth_Pairing {
         $site_id  = ATOZ_Growth_Site_Identity::get_site_id();
         $site_url = untrailingslashit( home_url( '/' ) );
 
+        $endpoint = ATOZ_Growth_Endpoints::endpoint( 'pairing/confirm' );
+        if ( is_wp_error( $endpoint ) ) { return $endpoint; }
         self::mark_pending();
 
         $response = wp_remote_post(
-            self::CONFIRM_ENDPOINT,
+            $endpoint,
             array(
                 'timeout'     => 15,
                 'redirection' => 0,
@@ -189,7 +191,7 @@ class ATOZ_Growth_Pairing {
         if (
             200 === $status_code &&
             is_array( $payload ) &&
-            ! empty( $payload['success'] ) &&
+            isset( $payload['success'] ) && true === $payload['success'] &&
             isset( $payload['connection'] ) &&
             is_array( $payload['connection'] ) &&
             isset( $payload['connection']['id'], $payload['connection']['site_url'], $payload['connection']['status'] ) &&
@@ -228,6 +230,14 @@ class ATOZ_Growth_Pairing {
             'atoz_confirmation_failed',
             'The pairing could not be confirmed. Generate a fresh code and try again.'
         );
+    }
+
+    /** Only a local administrator with a fresh nonce can reset; permanent Site ID is retained. */
+    public static function reset_for_reconnect( $nonce ) {
+        if ( ! current_user_can( 'manage_options' ) || ! wp_verify_nonce( $nonce, 'atoz_growth_reconnect' ) ) {
+            return new WP_Error( 'atoz_reconnect_forbidden', 'Reconnect requires explicit local administrator authorization.' );
+        }
+        return self::mark_not_connected();
     }
 
     /**

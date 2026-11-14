@@ -32,7 +32,7 @@ def build(output):
     manifest = {'version': version, 'source_revision': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
                 'archive': archive.name, 'sha256': digest(archive.read_bytes()),
                 'files': {SLUG + '/' + p.relative_to(SOURCE).as_posix(): digest(p.read_bytes()) for p in files},
-                'mode': 'read-only', 'live_wordpress_validation': False}
+                'mode': 'read-only-default; isolated-drafts-opt-in', 'live_wordpress_validation': False}
     (output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     (output/'SHA256SUMS').write_text(manifest['sha256']+'  '+archive.name+'\n')
     verify(output)

@@ -1,3 +1,7 @@
+import { createClient } from "@supabase/supabase-js";
+import { DurableOperationGrantStore, type RpcClient } from "./durable-grants.js";
+import { createDraftWorkflowService, type DraftWorkflowService } from "./draft-workflow.js";
+import { registerDraftWorkflowRoutes } from "./draft-routes.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { createConnectedSitesReader } from "./connected-sites.js";
 import { authenticate, type AuthenticatedRequest } from "../auth/authenticate.js";
@@ -24,15 +28,17 @@ type RouteDependencies = {
   controlledActionService?: ControlledActionService | null;
   controlledWritesEnabled?: boolean;
   authenticate?: typeof authenticate;
+  draftWorkflowService?: DraftWorkflowService | null;
 };
 
 function createReadServices() {
   const url = process.env.SUPABASE_URL?.trim();
   const anonKey = process.env.SUPABASE_ANON_KEY?.trim();
-  if (!url || !anonKey) return { inspectionService: null, inventoryService: null };
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!url || !anonKey || !serviceKey) return { inspectionService: null, inventoryService: null };
   const connections = new SupabaseInspectionConnectionStore(url, anonKey);
   const client = new SecureWordPressSiteClient();
-  const grants = new InspectionGrantStore();
+  const grants = new DurableOperationGrantStore(createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } }) as unknown as RpcClient);
   return {
     inspectionService: new SiteInspectionService(connections, client, grants),
     inventoryService: new SiteInventoryService(connections, client, grants),
@@ -241,6 +247,8 @@ export async function registerWpManagerRoutes(
     );
   }
 
+  await registerDraftWorkflowRoutes(app, { service: dependencies.draftWorkflowService === undefined ? createDraftWorkflowService() : dependencies.draftWorkflowService, authenticate: authHandler });
+
   if (writesEnabled) {
     app.post(
       "/api/wp-manager/sites/:connectionId/actions/proposals",
@@ -326,7 +334,7 @@ export async function registerWpManagerRoutes(
       });
     }
 
-    if (!inspectionService.authorize(request.body)) {
+    if (!await inspectionService.authorize(request.body)) {
       return reply.code(403).send({
         success: false,
         authorized: false,

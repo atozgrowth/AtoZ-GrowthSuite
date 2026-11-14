@@ -59,7 +59,7 @@ export interface WordPressSiteInspectionResponse {
   inspection: WordPressSiteInspection;
 }
 
-export type WordPressInventoryResource = "posts" | "pages" | "media" | "plugins";
+export type WordPressInventoryResource = "posts" | "pages" | "media" | "plugins" | "themes";
 export interface WordPressInventoryPagination { page: number; per_page: number; total_items: number; total_pages: number }
 export interface WordPressContentInventoryItem {
   id: number; title: string; status: string; author_display_name: string | null;
@@ -69,13 +69,14 @@ export interface WordPressMediaInventoryItem {
   id: number; title: string; media_type: string; mime_type: string;
   width: number | null; height: number | null; uploaded_at: string | null; public_url: string;
 }
+export interface WordPressThemeInventoryItem { name: string; version: string; active: boolean; parent: string | null; update_available: boolean | null }
 export interface WordPressPluginInventoryItem { name: string; version: string; active: boolean }
 export interface WordPressInventory {
   identity: { site_id: string; site_url: string };
   mode: "read-only";
   resource: WordPressInventoryResource;
   pagination?: WordPressInventoryPagination;
-  items: Array<WordPressContentInventoryItem | WordPressMediaInventoryItem | WordPressPluginInventoryItem>;
+  items: Array<WordPressContentInventoryItem | WordPressMediaInventoryItem | WordPressPluginInventoryItem | WordPressThemeInventoryItem>;
 }
 export interface WordPressInventoryResponse { success: true; inventory: WordPressInventory }
 

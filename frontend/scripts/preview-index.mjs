@@ -11,6 +11,8 @@ const entries = [
   ["05-wordpress-manager.png", "WordPress Manager", workspace + "/wordpress", "Synthetic customer", 1440],
   ["06-account-settings.png", "Account Settings", workspace + "/account", "Synthetic customer", 1440],
   ["07-mobile-customer-dashboard.png", "Mobile Customer Dashboard", workspace + "/dashboard", "Synthetic customer", 390],
+  ["08-wordpress-draft-desktop.png", "WordPress Draft Workspace", workspace + "/wordpress", "Synthetic isolated draft provider", 1440],
+  ["09-wordpress-draft-mobile.png", "Mobile WordPress Draft Workspace", workspace + "/wordpress", "Synthetic isolated draft provider", 390],
 ];
 const checksum = data => createHash("sha256").update(data).digest("hex");
 const screenshots = [];

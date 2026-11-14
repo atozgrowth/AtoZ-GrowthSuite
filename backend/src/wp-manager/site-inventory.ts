@@ -1,6 +1,6 @@
 import { normalizeSiteUrl } from "./pairing.js";
 import {
-  InspectionGrantStore,
+  type InspectionGrantRepository,
   type InspectionConnection,
   type InspectionConnectionStore,
   type ReadGrantScope,
@@ -156,7 +156,7 @@ export class SiteInventoryService {
   constructor(
     private readonly connections: InspectionConnectionStore,
     private readonly siteClient: WordPressInventoryClient,
-    private readonly grants: InspectionGrantStore,
+    private readonly grants: InspectionGrantRepository,
   ) {}
 
   async list(input: { userId: string; accessToken: string; connectionId: unknown; resource: InventoryResource; page?: unknown; perPage?: unknown }): Promise<InventoryResult> {
@@ -173,13 +173,14 @@ export class SiteInventoryService {
     catch { return { ok: false, reason: "unavailable" }; }
     if (!connection) return { ok: false, reason: "not_found" };
     const normalized = { ...connection, site_url: normalizeSiteUrl(connection.site_url), site_id: connection.site_id.toLowerCase() };
-    const grant = this.grants.issue(normalized, { scope: input.resource, ...(page ? { page } : {}), ...(perPage ? { perPage } : {}) });
+    let grant: string;
+    try { grant = await this.grants.issue(normalized, { scope: input.resource, ...(page ? { page } : {}), ...(perPage ? { perPage } : {}) }); } catch { return { ok: false, reason: "unavailable" }; }
     try {
       const response = await this.siteClient.list({ siteUrl: normalized.site_url, grant, resource: input.resource, page, perPage });
       const value = sanitizeInventory(response, normalized, input.resource);
       if (value.pagination && (value.pagination.page !== page || value.pagination.per_page !== perPage)) throw new Error("pagination mismatch");
       return { ok: true, value };
     } catch { return { ok: false, reason: "unavailable" }; }
-    finally { this.grants.revoke(grant); }
+    finally { try { await this.grants.revoke(grant); } catch { /* short durable expiry remains */ } }
   }
 }

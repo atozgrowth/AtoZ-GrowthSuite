@@ -5,6 +5,7 @@ class WP_Error { public $code; public function __construct($code, $message='', $
 class WP_REST_Server { const READABLE='GET'; }
 $GLOBALS['connected']=true; $GLOBALS['remote_count']=0; $GLOBALS['routes']=array(); $GLOBALS['remote']=array('code'=>200,'body'=>'{"success":true,"authorized":true}');
 function add_action($name,$callback) {}
+function add_filter($name,$callback,$priority=10,$accepted=1) {}
 function current_user_can($capability) { return false; }
 function register_rest_route($namespace,$route,$options) { $GLOBALS['routes'][$route]=$options; }
 function rest_ensure_response($value) { return $value; }
@@ -32,6 +33,7 @@ class SyntheticTheme {
 function wp_get_themes() { return array('synthetic'=>new SyntheticTheme('Synthetic Theme')); }
 function get_stylesheet() { return 'synthetic'; }
 function get_site_transient($key) { return $GLOBALS['updates']; }
+require dirname(__DIR__).'/atoz-growth-wp-manager/includes/class-atoz-endpoints.php';
 require dirname(__DIR__).'/atoz-growth-wp-manager/includes/class-atoz-rest-api.php';
 $count=0;
 function check($condition,$name) { global $count; if (!$condition) { fwrite(STDERR,"FAIL: $name\n"); exit(1); } $count++; }
