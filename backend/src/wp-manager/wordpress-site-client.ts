@@ -54,15 +54,27 @@ function siteReadUrl(siteUrl: string, resource: "inspection" | InventoryResource
   url.hash = "";
   return url;
 }
+/** URL.hostname brackets IPv6 literals; DNS/IP/TLS verification require raw host. */
+export function wordPressTlsIdentity(url: URL) {
+  const certificateHost = url.hostname.startsWith("[") && url.hostname.endsWith("]")
+    ? url.hostname.slice(1, -1) : url.hostname;
+  return {
+    certificateHost,
+    // RFC 6066 SNI is for DNS names, never IPv4/IPv6 address literals.
+    servername: isIP(certificateHost) ? undefined : certificateHost,
+    hostHeader: url.host,
+  };
+}
 async function requestJson(url: URL, grant: string): Promise<unknown> {
-  const resolved = await resolvePublicAddress(url.hostname);
+  const identity = wordPressTlsIdentity(url);
+  const resolved = await resolvePublicAddress(identity.certificateHost);
   return new Promise((resolve, reject) => {
     const req = request({
       protocol: "https:", hostname: resolved.address, family: resolved.family, port: 443,
-      method: "GET", path: url.pathname + url.search, servername: url.hostname,
+      method: "GET", path: url.pathname + url.search, servername: identity.servername,
       rejectUnauthorized: true,
-      checkServerIdentity: (_hostname, certificate) => checkServerIdentity(url.hostname, certificate),
-      headers: { Accept: "application/json", Host: url.host, "User-Agent": "AtoZ-Growth-WP-Manager/0.2", "X-AtoZ-Inspection-Grant": grant },
+      checkServerIdentity: (_hostname, certificate) => checkServerIdentity(identity.certificateHost, certificate),
+      headers: { Accept: "application/json", Host: identity.hostHeader, "User-Agent": "AtoZ-Growth-WP-Manager/0.2", "X-AtoZ-Inspection-Grant": grant },
     }, (response) => {
       if (response.statusCode !== 200) { response.resume(); reject(new Error("wordpress read rejected")); return; }
       const contentType = String(response.headers["content-type"] ?? "");
