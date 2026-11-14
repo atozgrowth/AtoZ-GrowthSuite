@@ -15,7 +15,7 @@ export function DashboardPage() {
   const [workspaceError, setWorkspaceError] = useState("");
   const [verified, setVerified] = useState(false);
   const [reload, setReload] = useState(0);
-  useEffect(() => { document.title = "Overview · A2Z GrowthSuite"; }, []);
+  useEffect(() => { document.title = "Overview · A to Z Growth Suite"; }, []);
   useEffect(() => {
     const controller = new AbortController();
     setSites(null); setError(""); setWorkspaceError(""); setVerified(false);

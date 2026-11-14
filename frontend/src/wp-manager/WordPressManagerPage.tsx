@@ -89,7 +89,7 @@ export function WordPressManagerPage() {
   );
 
   useEffect(() => {
-    document.title = "WordPress Manager · A to Z Growth";
+    document.title = "WordPress Manager · A to Z Growth Suite";
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
@@ -335,7 +335,7 @@ export function WordPressManagerPage() {
               </div>
               <p className="pairing-expiry">
                 Expires {new Date(pairing.expires_at).toLocaleString()}. Treat this code like a
-                temporary password; it is single-use and is not stored in plaintext by A to Z Growth.
+                temporary password; it is single-use and is not stored in plaintext by A to Z Growth Suite.
               </p>
               <div className="pairing-actions">
                 <button

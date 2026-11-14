@@ -141,3 +141,56 @@ test("auth mode changes and browser history clear password fields", async ({ pag
   await page.goBack(); await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
 });
+
+test("canonical text identity remains readable at mobile widths without replacement logos", async ({ page }) => {
+  await mockServices(page);
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/login');
+    await expect(page).toHaveTitle('Sign in · A to Z Growth Suite');
+    const brand = page.getByRole('link', { name: 'A to Z Growth Suite dashboard' }).filter({ visible: true });
+    await expect(brand).toHaveCount(1);
+    await expect(brand).toHaveText('A to Z Growth Suite');
+    await expect(page.locator('.brand-mark')).toHaveCount(0);
+    await expect(page.locator('.brand img')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
+test("primary action gradient endpoints retain accessible white text contrast", async ({ page }) => {
+  await mockServices(page); await page.goto('/login');
+  const result = await page.locator('.button.primary').evaluate(element => {
+    const style = getComputedStyle(element);
+    const root = getComputedStyle(document.documentElement);
+    function luminance(hex: string) {
+      const values = hex.trim().slice(1).match(/../g)!.map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);
+      return values[0]*.2126+values[1]*.7152+values[2]*.0722;
+    }
+    return { color: style.color, gradient: style.backgroundImage, ratios: ['--brand-pink-ink','--brand-teal-ink'].map(token=>1.05/(luminance(root.getPropertyValue(token))+.05)) };
+  });
+  expect(result.color).toBe('rgb(255, 255, 255)');
+  expect(result.gradient).toContain('linear-gradient');
+  for (const ratio of result.ratios) expect(ratio).toBeGreaterThanOrEqual(4.5);
+});
+
+test("dark preference stays intentionally readable in light mode and motion preference is respected", async ({ page }) => {
+  await page.emulateMedia({ colorScheme:'dark', reducedMotion:'reduce' });
+  await mockServices(page); await page.goto('/signup');
+  await expect(page.getByRole('heading', { level:1 })).toBeVisible();
+  expect(await page.evaluate(()=>getComputedStyle(document.documentElement).colorScheme)).toBe('light');
+  const duration = await page.locator('.button.primary').evaluate(element=>getComputedStyle(element).transitionDuration);
+  expect(parseFloat(duration)).toBeLessThanOrEqual(.001);
+});
+
+test("desktop login identity keeps a high-contrast keyboard focus indicator on its dark surface", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockServices(page); await page.goto('/login');
+  await page.keyboard.press('Tab');
+  const identity = page.locator('.login-intro .brand');
+  await identity.focus();
+  const outline = await identity.evaluate(element => {
+    const style = getComputedStyle(element);
+    return { color: style.outlineColor, width: style.outlineWidth, style: style.outlineStyle };
+  });
+  expect(outline).toEqual({ color: 'rgb(124, 228, 236)', width: '3px', style: 'solid' });
+});
