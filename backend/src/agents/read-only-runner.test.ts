@@ -65,3 +65,27 @@ test('oversized/unserializable output or audit failure never reports completion'
   assert.equal((await runReadOnlyAgent(f.input)).status, 'failed');
   assert.equal((await runReadOnlyAgent({ ...fixture().input, audit: () => { throw Error('storage unavailable'); } })).status, 'failed');
 });
+
+test('a provider plan cannot mutate its tool/resource during a transient retry', async () => {
+  const proposed = { tool: 'wordpress.inventory', resourceId: site };
+  const f = fixture(proposed); const observed: string[] = [];
+  f.input.adapters['wordpress.inventory'] = async id => {
+    observed.push(id);
+    if (observed.length === 1) { proposed.resourceId = foreign; proposed.tool = 'googleAds.campaignReport'; throw new TransientReadError('retry'); }
+    return [];
+  };
+  f.input.adapters['googleAds.campaignReport'] = async () => { throw Error('must not switch tools'); };
+  const outcome = await runReadOnlyAgent(f.input);
+  assert.equal(outcome.status, 'completed'); assert.deepEqual(observed, [site,site]);
+});
+test('late interpretation cannot dispatch after timeout, and invalid deadline is denied first', async () => {
+  const f = fixture(); let resolvePlan!: (value: unknown) => void;
+  f.input.provider.interpret = () => new Promise(resolve => { resolvePlan = resolve; });
+  assert.equal((await runReadOnlyAgent({ ...f.input, timeoutMs: 5 })).status, 'timed_out');
+  resolvePlan(plan); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.calls(), 0); assert.equal(f.audit.length, 1);
+  let interpreted = 0;
+  f.input.provider.interpret = async () => { interpreted++; return plan; };
+  for (const timeoutMs of [0,-1,1.5,30001,Infinity]) assert.equal((await runReadOnlyAgent({ ...f.input, timeoutMs })).status, 'denied');
+  assert.equal(interpreted, 0);
+});

@@ -8,7 +8,7 @@ export type Principal = Readonly<{
   adsCustomerIds: readonly string[];
 }>;
 export type ToolName = 'wordpress.inventory' | 'googleAds.campaignReport';
-export type ReadPlan = { tool: ToolName; resourceId: string };
+export type ReadPlan = Readonly<{ tool: ToolName; resourceId: string }>;
 export interface InterpretationProvider {
   interpret(untrustedRequest: string, signal: AbortSignal): Promise<unknown>;
 }
@@ -26,10 +26,12 @@ export type AuditEvent = Pick<Execution, 'id' | 'status' | 'attempts' | 'tool'>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function parsePlan(value: unknown, principal: Principal): ReadPlan | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const plan = value as Record<string, unknown>;
-  if (Object.keys(plan).sort().join(',') !== 'resourceId,tool' || typeof plan.resourceId !== 'string') return null;
-  if (plan.tool === 'wordpress.inventory' && uuid.test(plan.resourceId) && principal.siteIds.includes(plan.resourceId)) return plan as ReadPlan;
-  if (plan.tool === 'googleAds.campaignReport' && /^\d{10}$/.test(plan.resourceId) && principal.adsCustomerIds.includes(plan.resourceId)) return plan as ReadPlan;
+  if (Object.keys(value).sort().join(',') !== 'resourceId,tool') return null;
+  // Read each untrusted property once, then detach before any adapter await/retry.
+  const { tool, resourceId } = value as Record<string, unknown>;
+  if (typeof resourceId !== 'string') return null;
+  if (tool === 'wordpress.inventory' && uuid.test(resourceId) && principal.siteIds.includes(resourceId)) return Object.freeze({ tool, resourceId });
+  if (tool === 'googleAds.campaignReport' && /^\d{10}$/.test(resourceId) && principal.adsCustomerIds.includes(resourceId)) return Object.freeze({ tool, resourceId });
   return null;
 }
 /** One deadline covers interpretation + bounded retry. Authorization never retries. */
