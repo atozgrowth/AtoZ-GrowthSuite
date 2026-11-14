@@ -1,0 +1,50 @@
+name: Ads isolated PostgreSQL proof
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  durable-vault:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_ANON_KEY: synthetic-anon
+      SUPABASE_SERVICE_ROLE_KEY: ''
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix backend --ignore-scripts && npm --prefix backend test && npm --prefix backend run build
+      - run: npm ci --prefix integration/ads-postgres --ignore-scripts
+      - run: python3 integration/ads-postgres/run.py
+      - name: Hash redacted database proof
+        run: |
+          cd integration/ads-postgres
+          sha256sum evidence.json > evidence.sha256
+      - id: proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ads-postgres-proof-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            integration/ads-postgres/evidence.json
+            integration/ads-postgres/evidence.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ steps.proof.outputs.artifact-id }}
+          merge-multiple: true
+          path: downloaded-ads-proof
+      - name: Verify downloaded proof and exact source
+        run: |
+          cd downloaded-ads-proof
+          sha256sum -c evidence.sha256
+          node -e "const e=require('./evidence.json'); if(!e.actual_postgresql || e.live_provider_calls!==0 || e.source_dirty || e.source_revision!==process.env.HEAD_SHA)process.exit(1)"
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
