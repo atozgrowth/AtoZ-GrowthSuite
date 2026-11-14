@@ -14,6 +14,8 @@ SOURCE = ROOT / 'wp-manager-plugin' / SLUG
 def digest(data): return hashlib.sha256(data).hexdigest()
 
 def build(output):
+    if subprocess.check_output(['git','status','--porcelain','--',SOURCE.relative_to(ROOT).as_posix()],cwd=ROOT,text=True).strip():
+        raise ValueError('Commit plugin source before building a versioned package')
     output.mkdir(parents=True, exist_ok=True)
     entry = (SOURCE / (SLUG + '.php')).read_text()
     version = re.search(r'^ \* Version: ([0-9]+\.[0-9]+\.[0-9]+)$', entry, re.M).group(1)
