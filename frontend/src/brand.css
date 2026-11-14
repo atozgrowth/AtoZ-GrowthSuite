@@ -41,7 +41,7 @@
 .button.primary:hover { background: linear-gradient(110deg, #920033, #004e57); }
 .button.primary:disabled { opacity: 1; background: #dfe4ec; color: #596579; }
 .button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid var(--brand-focus); outline-offset: 3px; }
-.sidebar a:focus-visible { outline-color: #7ce4ec; }
+.sidebar a:focus-visible, .login-intro a:focus-visible { outline-color: #7ce4ec; }
 .auth-mode-switch button.active { color: var(--brand-pink-ink); }
 .avatar, .card-icon, .metric-icon, .empty-icon, .placeholder-icon, .property-icon,
 .onboarding-list li>span, .state-icon.site { background: var(--brand-tint); color: var(--brand-pink-ink); }

@@ -181,3 +181,16 @@ test("dark preference stays intentionally readable in light mode and motion pref
   const duration = await page.locator('.button.primary').evaluate(element=>getComputedStyle(element).transitionDuration);
   expect(parseFloat(duration)).toBeLessThanOrEqual(.001);
 });
+
+test("desktop login identity keeps a high-contrast keyboard focus indicator on its dark surface", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockServices(page); await page.goto('/login');
+  await page.keyboard.press('Tab');
+  const identity = page.locator('.login-intro .brand');
+  await identity.focus();
+  const outline = await identity.evaluate(element => {
+    const style = getComputedStyle(element);
+    return { color: style.outlineColor, width: style.outlineWidth, style: style.outlineStyle };
+  });
+  expect(outline).toEqual({ color: 'rgb(124, 228, 236)', width: '3px', style: 'solid' });
+});
