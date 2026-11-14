@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../auth/useAuth";
 import { Icon } from "../components/Icon";
 import type { WordPressPairing, WordPressSite, WordPressSiteInspection } from "../types/wordpress";
 import { decodeDisplayText } from "./displayText";
+import { WordPressDraftPanel } from "./WordPressDraftPanel";
 import { WordPressInventoryPanel } from "./WordPressInventoryPanel";
 import { WordPressActionApprovalPanel } from "./WordPressActionApprovalPanel";
 import {
@@ -10,6 +11,7 @@ import {
   getWordPressSiteInspection,
   getWordPressSites,
   initiateWordPressPairing,
+  revokeWordPressConnection,
 } from "./api";
 
 type PairingPhase = "idle" | "starting" | "pending" | "success" | "expired" | "error";
@@ -65,6 +67,9 @@ export function WordPressManagerPage() {
   const [inspectedSiteId, setInspectedSiteId] = useState<string | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState("");
+  const inspectionGeneration=useRef(0);
+  const [confirmRevoke,setConfirmRevoke]=useState(false),[revokeAgreed,setRevokeAgreed]=useState(false),[revokeBusy,setRevokeBusy]=useState(false),[revokeError,setRevokeError]=useState('');
+  const revokeLock=useRef(false);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -92,7 +97,7 @@ export function WordPressManagerPage() {
     document.title = "WordPress Manager · A to Z Growth";
     const controller = new AbortController();
     void load(controller.signal);
-    return () => controller.abort();
+    return () => { controller.abort(); inspectionGeneration.current++; };
   }, [load]);
 
   useEffect(() => {
@@ -192,26 +197,33 @@ export function WordPressManagerPage() {
       return;
     }
 
+    const generation=++inspectionGeneration.current;
+    setConfirmRevoke(false);setRevokeAgreed(false);setRevokeError('');
     setInspectedSiteId(site.id);
     setInspection(null);
     setInspectionError("");
     setInspectionLoading(true);
     try {
-      setInspection(
-        await getWordPressSiteInspection(
-          session?.access_token ?? "",
-          site.id,
-        ),
-      );
+      const result=await getWordPressSiteInspection(session?.access_token ?? "",site.id);
+      if(generation===inspectionGeneration.current)setInspection(result);
     } catch (caught) {
+      if(generation!==inspectionGeneration.current)return;
       setInspectionError(
         caught instanceof ApiError
           ? caught.message
           : "The connected WordPress site could not be inspected.",
       );
     } finally {
-      setInspectionLoading(false);
+      if(generation===inspectionGeneration.current)setInspectionLoading(false);
     }
+  }
+
+  async function revokeSelectedConnection() {
+    if(!inspectedSiteId||!revokeAgreed||revokeLock.current)return;
+    revokeLock.current=true;setRevokeBusy(true);setRevokeError('');const id=inspectedSiteId;
+    try{await revokeWordPressConnection(session?.access_token??'',id);setSites(current=>current.filter(site=>site.id!==id));inspectionGeneration.current++;setInspectedSiteId(null);setInspection(null);setInspectionError('');setConfirmRevoke(false);setRevokeAgreed(false);}
+    catch(caught){setRevokeError(caught instanceof Error?caught.message:'Connection revocation could not be verified.');}
+    finally{revokeLock.current=false;setRevokeBusy(false);}
   }
 
   function resetPairing() {
@@ -234,7 +246,7 @@ export function WordPressManagerPage() {
             <h1>WordPress Manager</h1>
             <span className="status-pill readonly">
               <Icon name="shield" size={14} />
-              Read only
+              Read-only by default
             </span>
           </div>
           <p>View and securely pair WordPress sites with your authenticated account.</p>
@@ -257,8 +269,8 @@ export function WordPressManagerPage() {
       <div className="readonly-banner">
         <Icon name="shield" />
         <div>
-          <strong>Safe, read-only access</strong>
-          <p>Pairing grants no editing, update, deletion, or WordPress administrator capabilities.</p>
+          <strong>Safe access by default</strong>
+          <p>Inventory remains read-only. Draft operations require explicit isolated-test configuration and exact owner approval. Publishing and unrestricted administration are unavailable.</p>
         </div>
       </div>
 
@@ -435,7 +447,7 @@ export function WordPressManagerPage() {
                   className="button secondary inspect-button"
                   type="button"
                   onClick={() => void inspectSite(site)}
-                  disabled={typeof site.id !== "string" || (inspectionLoading && site.id === inspectedSiteId)}
+                  disabled={revokeBusy || typeof site.id !== "string" || (inspectionLoading && site.id === inspectedSiteId)}
                 >
                   {inspectionLoading && site.id === inspectedSiteId ? "Inspecting…" : "Inspect site"}
                 </button>
@@ -536,6 +548,8 @@ export function WordPressManagerPage() {
           )}
         </section>
       )}
+      {inspectedSite && typeof inspectedSite.id === "string" && session?.access_token && <section className="panel connection-management" aria-labelledby="connection-management-title"><div className="panel-heading"><div><h2 id="connection-management-title">Connection management</h2><p>{host(inspectedSite.site_url)}</p></div><button className="button secondary" disabled={revokeBusy} onClick={()=>{setConfirmRevoke(true);setRevokeAgreed(false);setRevokeError('');}}>Revoke this connection</button></div>{confirmRevoke&&<div><p>Revocation removes this account’s access and invalidates pending grants. Reconnection requires a fresh pairing and WordPress approval.</p><label className="draft-approval-check"><input type="checkbox" checked={revokeAgreed} onChange={e=>setRevokeAgreed(e.target.checked)} disabled={revokeBusy}/>I want to revoke access to {host(inspectedSite.site_url)}.</label><div className="header-actions"><button className="button primary" disabled={!revokeAgreed||revokeBusy} onClick={()=>void revokeSelectedConnection()}>{revokeBusy?'Revoking…':'Confirm revocation'}</button><button className="button secondary" disabled={revokeBusy} onClick={()=>setConfirmRevoke(false)}>Keep connection</button></div></div>}{revokeError&&<p role="alert">{revokeError}</p>}</section>}
+      {inspectedSite && typeof inspectedSite.id === "string" && session?.access_token && <WordPressDraftPanel key={inspectedSite.id} accessToken={session.access_token} connectionId={inspectedSite.id} siteUrl={inspectedSite.site_url}/>}
       {inspectedSite && typeof inspectedSite.id === "string" && session?.access_token && (
         <WordPressInventoryPanel accessToken={session.access_token} connectionId={inspectedSite.id} />
       )}

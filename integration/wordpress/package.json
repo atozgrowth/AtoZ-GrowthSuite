@@ -1,0 +1,1 @@
+{"name":"atoz-isolated-wordpress-tests","private":true,"type":"module","scripts":{"test":"python3 run.py"},"devDependencies":{"pg":"8.16.3"}}

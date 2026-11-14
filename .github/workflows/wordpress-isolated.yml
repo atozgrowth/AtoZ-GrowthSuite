@@ -1,0 +1,60 @@
+name: Isolated WordPress draft integration
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  durable-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - run: python3 scripts/wordpress/test_durable_database.py
+  actual-wordpress-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_ANON_KEY: synthetic-anon
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_ANON_KEY: synthetic-anon
+      VITE_API_BASE_URL: /api
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix backend --ignore-scripts && npm --prefix backend run build
+      - run: npm ci --prefix integration/wordpress --ignore-scripts
+      - run: python3 integration/wordpress/run.py
+      - name: Hash exact actual-core evidence
+        run: |
+          cd integration/wordpress
+          sha256sum evidence.json > evidence.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: actual-wordpress-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            integration/wordpress/evidence.json
+            integration/wordpress/evidence.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: actual-wordpress-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: downloaded-wordpress-evidence
+      - name: Verify downloaded evidence
+        run: |
+          cd downloaded-wordpress-evidence
+          sha256sum -c evidence.sha256
+          node -e "const e=require('./evidence.json'); if(!e.success || !e.actual_wordpress_core || e.source_dirty || e.source_revision!==process.env.GITHUB_SHA && e.source_revision!==process.env.HEAD_SHA) process.exit(1)"
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}

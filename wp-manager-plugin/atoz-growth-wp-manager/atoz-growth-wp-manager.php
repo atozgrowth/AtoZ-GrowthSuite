@@ -3,7 +3,7 @@
  * Plugin Name: A to Z Growth WP Manager
  * Plugin URI: https://atozgrowth.net/
  * Description: Secure WordPress connector for the A to Z Growth business automation platform.
- * Version: 0.4.1
+ * Version: 0.5.0
  * Author: A to Z Growth
  * Author URI: https://atozgrowth.net/
  * Text Domain: atoz-growth-wp-manager
@@ -13,12 +13,14 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'ATOZ_GROWTH_WP_MANAGER_VERSION', '0.4.1' );
+define( 'ATOZ_GROWTH_WP_MANAGER_VERSION', '0.5.0' );
 define( 'ATOZ_GROWTH_WP_MANAGER_FILE', __FILE__ );
 define( 'ATOZ_GROWTH_WP_MANAGER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'ATOZ_GROWTH_WP_MANAGER_URL', plugin_dir_url( __FILE__ ) );
 
+require_once ATOZ_GROWTH_WP_MANAGER_PATH . 'includes/class-atoz-endpoints.php';
 require_once ATOZ_GROWTH_WP_MANAGER_PATH . 'includes/class-atoz-rest-api.php';
+require_once ATOZ_GROWTH_WP_MANAGER_PATH . 'includes/class-atoz-drafts.php';
 require_once ATOZ_GROWTH_WP_MANAGER_PATH . 'includes/class-atoz-site-identity.php';
 require_once ATOZ_GROWTH_WP_MANAGER_PATH . 'includes/class-atoz-pairing.php';
 
@@ -63,6 +65,13 @@ function atoz_growth_wp_manager_admin_page() {
     $notice_type    = '';
     $notice_message = '';
 
+    if ( isset( $_SERVER['REQUEST_METHOD'] ) && 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['atoz_reconnect_action'] ) ) {
+        $nonce = isset( $_POST['atoz_reconnect_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['atoz_reconnect_nonce'] ) ) : '';
+        $result = ATOZ_Growth_Pairing::reset_for_reconnect( $nonce );
+        $notice_type = is_wp_error( $result ) ? 'error' : 'success';
+        $notice_message = is_wp_error( $result ) ? $result->get_error_message() : 'Local pairing reset. Revoke the previous backend connection and generate a fresh pairing code; the Site ID is unchanged.';
+    }
+
     if (
         isset( $_SERVER['REQUEST_METHOD'] ) &&
         'POST' === $_SERVER['REQUEST_METHOD'] &&
@@ -90,7 +99,7 @@ function atoz_growth_wp_manager_admin_page() {
             $notice_message = $result->get_error_message();
         } else {
             $notice_type    = 'success';
-            $notice_message = 'Pairing confirmed. This site is connected in read-only mode.';
+            $notice_message = ATOZ_Growth_Endpoints::writes_enabled() ? 'Pairing confirmed. Isolated test draft operations require exact approval.' : 'Pairing confirmed. This site is connected in read-only mode.';
         }
     }
 
@@ -132,18 +141,27 @@ function atoz_growth_wp_manager_admin_page() {
                 </tr>
                 <tr>
                     <td><strong>Operating Mode</strong></td>
-                    <td>Read-only</td>
+                    <td><?php echo esc_html( ATOZ_Growth_Endpoints::writes_enabled() ? 'Isolated unpublished drafts (test only)' : 'Read-only' ); ?></td>
                 </tr>
             </tbody>
         </table>
 
+        <?php if ( in_array( $connection_status, array( 'connected', 'revoked' ), true ) ) : ?>
+            <form method="post">
+                <?php wp_nonce_field( 'atoz_growth_reconnect', 'atoz_reconnect_nonce' ); ?>
+                <input type="hidden" name="atoz_reconnect_action" value="reset" />
+                <p>Revoke the old connection in A to Z Growth Suite before reconnecting. Reset keeps this site's permanent identity.</p>
+                <?php submit_button( 'Reset local pairing for reconnect', 'secondary', 'submit', false ); ?>
+            </form>
+        <?php endif; ?>
+
         <?php if ( 'connected' === $connection_status ) : ?>
             <div class="notice notice-success inline" style="max-width:770px;margin-top:20px;">
-                <p><strong>Connected.</strong> Management access remains read-only.</p>
+                <p><strong>Connected.</strong> <?php echo esc_html( ATOZ_Growth_Endpoints::writes_enabled() ? 'Unpublished draft operations are restricted to this isolated fixture and require approval.' : 'Management access remains read-only.' ); ?></p>
             </div>
         <?php elseif ( 'revoked' === $connection_status ) : ?>
             <div class="notice notice-warning inline" style="max-width:770px;margin-top:20px;">
-                <p><strong>Connection revoked.</strong> This site cannot be silently reassigned. Contact A to Z Growth before attempting another pairing.</p>
+                <p><strong>Connection revoked.</strong> This site cannot be silently reassigned. An administrator must explicitly reset local pairing and obtain a fresh backend challenge.</p>
             </div>
         <?php else : ?>
             <div class="card" style="max-width:800px;margin-top:20px;">

@@ -182,7 +182,13 @@ function sanitizeInspection(
   };
 }
 
-export class InspectionGrantStore {
+export interface InspectionGrantRepository {
+ issue(connection: InspectionConnection, authorization?: ReadGrantAuthorization): string | Promise<string>;
+ consume(input: { grant: string; siteId: string; siteUrl: string; scope?: ReadGrantScope; page?: number; perPage?: number }): boolean | Promise<boolean>;
+ revoke(grant: string): void | Promise<void>;
+}
+/** Explicit fixture store; production route factories use durable RPC storage. */
+export class InspectionGrantStore implements InspectionGrantRepository {
   private readonly grants = new Map<string, GrantRecord>();
 
   constructor(
@@ -293,7 +299,7 @@ export class SiteInspectionService {
   constructor(
     private readonly connections: InspectionConnectionStore,
     private readonly siteClient: WordPressSiteClient,
-    private readonly grants = new InspectionGrantStore(),
+    private readonly grants: InspectionGrantRepository = new InspectionGrantStore(),
   ) {}
 
   async inspect(input: {
@@ -326,7 +332,8 @@ export class SiteInspectionService {
       site_url: normalizeSiteUrl(connection.site_url),
       site_id: connection.site_id.toLowerCase(),
     };
-    const grant = this.grants.issue(normalizedConnection);
+    let grant: string;
+    try { grant = await this.grants.issue(normalizedConnection); } catch { return { ok: false, reason: "unavailable" }; }
 
     try {
       const response = await this.siteClient.inspect(normalizedConnection.site_url, grant);
@@ -337,14 +344,14 @@ export class SiteInspectionService {
     } catch {
       return { ok: false, reason: "unavailable" };
     } finally {
-      this.grants.revoke(grant);
+      try { await this.grants.revoke(grant); } catch { /* short durable expiry remains */ }
     }
   }
 
-  authorize(body: unknown) {
+  async authorize(body: unknown) {
     try {
       const input = objectValue(body);
-      return this.grants.consume({
+      return await this.grants.consume({
         grant: requireString(input.grant, 128),
         siteId: requireUuid(input.site_id),
         siteUrl: normalizeSiteUrl(input.site_url),

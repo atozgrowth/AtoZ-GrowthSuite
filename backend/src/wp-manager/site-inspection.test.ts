@@ -67,14 +67,14 @@ test("inspection requires an owned connected site and atomically consumes its gr
     async inspect(siteUrl, grant) {
       assert.equal(siteUrl, connection.site_url);
       assert.equal(
-        service.authorize({
+        await service.authorize({
           grant,
           site_id: connection.site_id,
           site_url: connection.site_url,
         }),
         true,
       );
-      replayAccepted = service.authorize({
+      replayAccepted = await service.authorize({
         grant,
         site_id: connection.site_id,
         site_url: connection.site_url,
@@ -113,7 +113,7 @@ test("inspection rejects a mismatched plugin identity", async () => {
   const siteClient: WordPressSiteClient = {
     async inspect(_siteUrl, grant) {
       assert.equal(
-        service.authorize({
+        await service.authorize({
           grant,
           site_id: connection.site_id,
           site_url: connection.site_url,

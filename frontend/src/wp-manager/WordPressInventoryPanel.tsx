@@ -5,13 +5,14 @@ import type {
   WordPressInventoryResource,
   WordPressMediaInventoryItem,
   WordPressPluginInventoryItem,
+  WordPressThemeInventoryItem,
 } from "../types/wordpress";
 import { ApiError, getWordPressInventory } from "./api";
 import { decodeDisplayText } from "./displayText";
 
 const resources: Array<{ value: WordPressInventoryResource; label: string }> = [
   { value: "posts", label: "Posts" }, { value: "pages", label: "Pages" },
-  { value: "media", label: "Media" }, { value: "plugins", label: "Plugins" },
+  { value: "media", label: "Media" }, { value: "plugins", label: "Plugins" }, { value: "themes", label: "Themes" },
 ];
 function safePublicUrl(value: string | null) {
   if (!value) return null;
@@ -55,7 +56,7 @@ export function WordPressInventoryPanel({ accessToken, connectionId }: { accessT
       {loading && <div className="state-box" role="status"><span className="spinner" /><h3>Loading {resource}</h3><p>Requesting safe metadata through the paired read-only connection…</p></div>}
       {!loading && error && <div className="state-box error-state" role="alert"><span className="state-icon">!</span><h3>Inventory unavailable</h3><p>{error}</p><button className="button secondary" type="button" onClick={() => setRefreshKey((current) => current + 1)}>Try again</button></div>}
       {!loading && inventory && inventory.items.length === 0 && <div className="state-box"><h3>No {resource} found</h3><p>This connected site reported no items for this page.</p></div>}
-      {!loading && inventory && inventory.items.length > 0 && resource !== "plugins" && (
+      {!loading && inventory && inventory.items.length > 0 && resource !== "plugins" && resource !== "themes" && (
         <div className="inventory-list">
           {resource === "media" ? (inventory.items as WordPressMediaInventoryItem[]).map((item) => {
             const url = safePublicUrl(item.public_url);
@@ -68,6 +69,9 @@ export function WordPressInventoryPanel({ accessToken, connectionId }: { accessT
       )}
       {!loading && inventory && resource === "plugins" && inventory.items.length > 0 && (
         <div className="inventory-list">{(inventory.items as WordPressPluginInventoryItem[]).map((item, index) => <article className="inventory-row" key={`${item.name}-${index}`}><div><strong>{decodeDisplayText(item.name)}</strong><small>Version {item.version || "Not reported"}</small></div><span className={`status-pill ${item.active ? "success" : "readonly"}`}>{item.active ? "Active" : "Inactive"}</span></article>)}</div>
+      )}
+      {!loading && inventory && resource === "themes" && inventory.items.length > 0 && (
+        <div className="inventory-list">{(inventory.items as WordPressThemeInventoryItem[]).map((item, index) => <article className="inventory-row" key={`${item.name}-${index}`}><div><strong>{decodeDisplayText(item.name)}</strong><small>Version {item.version || "Not reported"}{item.parent ? ` · Parent: ${decodeDisplayText(item.parent)}` : ""}</small><small>{item.update_available === null ? "Update status unknown or stale" : item.update_available ? "Update reported by recent cache" : "No update reported by recent cache"}</small></div><span className={`status-pill ${item.active ? "success" : "readonly"}`}>{item.active ? "Active" : "Inactive"}</span></article>)}</div>
       )}
       {!loading && pagination && <div className="inventory-pagination"><button className="button secondary" type="button" disabled={pagination.page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</button><span>Page {pagination.page} of {Math.max(1, pagination.total_pages)} · {pagination.total_items} items</span><button className="button secondary" type="button" disabled={pagination.total_pages === 0 || pagination.page >= pagination.total_pages} onClick={() => setPage((current) => current + 1)}>Next</button></div>}
     </section>

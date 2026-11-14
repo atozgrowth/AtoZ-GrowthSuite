@@ -178,7 +178,7 @@ export async function getWordPressInventory(
   if (!Number.isInteger(page) || page < 1 || !Number.isInteger(perPage) || perPage < 1 || perPage > 50) {
     throw new ApiError("The inventory page request is invalid.");
   }
-  const query = resource === "plugins" ? "" : `?page=${page}&per_page=${perPage}`;
+  const query = resource === "plugins" || resource === "themes" ? "" : `?page=${page}&per_page=${perPage}`;
   const headers = authorizationHeaders(accessToken);
   let response: Response;
   try {
@@ -324,4 +324,12 @@ export function approveWordPressControlledAction(accessToken: string, actionId: 
 
 export function cancelWordPressControlledAction(accessToken: string, actionId: string) {
   return transitionWordPressControlledAction(accessToken, actionId, "cancel");
+}
+
+export async function revokeWordPressConnection(accessToken: string, connectionId: string) {
+ if(!isSiteId(connectionId))throw new ApiError('The connected site identifier is invalid.');
+ const headers=authorizationHeaders(accessToken);let response:Response;
+ try{response=await fetch(`${API_BASE}/connections/${connectionId}/revoke`,{method:'POST',headers});}catch{throw new ApiError('The connection could not be revoked. Refresh the site directory before retrying.');}
+ const payload=await responsePayload(response);if(!response.ok)throw new ApiError(response.status===401?'Your session is no longer authorized. Please sign in again.':'The connection could not be revoked.',response.status);
+ const result=payload as {success?:unknown;connection?:{id?:unknown;status?:unknown}};if(result.success!==true||result.connection?.id!==connectionId||result.connection.status!=='revoked')throw new ApiError('The revocation response could not be verified. Refresh the site directory.');
 }

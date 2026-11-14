@@ -1,0 +1,78 @@
+/** Actual WordPress HTTP + real PG primitives; only Auth/provider/transport origin mapping are fixtures. */
+import assert from 'node:assert/strict';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import pg from 'pg';
+import Fastify from '../node_modules/fastify/fastify.js';
+import { registerWpManagerRoutes } from '../dist/wp-manager/routes.js';
+import { PairingService } from '../dist/wp-manager/pairing.js';
+import { SiteInspectionService } from '../dist/wp-manager/site-inspection.js';
+import { SiteInventoryService } from '../dist/wp-manager/site-inventory.js';
+import { DurableOperationGrantStore } from '../dist/wp-manager/durable-grants.js';
+import { DraftWorkflowService, SupabaseDraftWorkflowStore, OfflineDraftProvider } from '../dist/wp-manager/draft-workflow.js';
+const pool=new pg.Pool({host:'postgres',user:'postgres',password:'synthetic-postgres',database:'fixture',max:8});
+const owner='10000000-0000-4000-8000-000000000001',foreign='10000000-0000-4000-8000-000000000002';
+const installation=JSON.parse(await readFile('/fixture/installation.json','utf8'));
+const siteUrl='https://fixture.example.test';
+const checks=[];
+const app=Fastify({logger:false});
+async function check(name,fn){await fn();checks.push(name);}
+const q=(sql,args=[])=>pool.query(sql,args);
+const rpc={async rpc(name,args){
+ if(!/^wp_manager_[a-z_]+$/.test(name)||Object.keys(args).some(k=>!/^p_[a-z_]+$/.test(k)))throw Error('Unexpected fixture RPC');
+ const db=await pool.connect();
+ try{await db.query('BEGIN');await db.query('SET LOCAL ROLE service_role');const values=Object.values(args);const named=Object.keys(args).map((k,i)=>'"'+k+'" => $'+(i+1)).join(',');const r=await db.query('SELECT public."'+name+'"('+named+') AS value',values);await db.query('COMMIT');return {data:r.rows[0].value,error:null};}
+ catch(e){await db.query('ROLLBACK');console.error('fixture RPC failed:',name,e.code);return {data:null,error:{code:e.code}};}finally{db.release();}
+}};
+const connections={async findOwnedConnected({userId,connectionId}){return (await q("SELECT id,user_id,site_id,site_url,status FROM public.wordpress_site_connections WHERE id=$1 AND user_id=$2 AND status='connected'",[connectionId,userId])).rows[0]??null;}};
+async function wp(path,{method='GET',body,grant}={}){
+ const u=new URL('http://wordpress/');u.searchParams.set('rest_route','/atoz-growth/v1/'+path);
+ if(path.includes('?')){const [p,search]=path.split('?');u.searchParams.set('rest_route','/atoz-growth/v1/'+p);for(const [k,v]of new URLSearchParams(search))u.searchParams.set(k,v);}
+ const response=await fetch(u,{method,headers:{Accept:'application/json',...(grant?{'X-AtoZ-Inspection-Grant':grant}:{}),...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15000)});
+ const data=await response.json();return {status:response.status,data};
+}
+async function control(body){const r=await fetch('http://wordpress/fixture-control.php',{method:'POST',headers:{'Content-Type':'application/json','X-Fixture-Control':'synthetic-fixture-control'},body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});assert.equal(r.status,200,'fixture control status');return r.json();}
+const client={async inspect(url,grant){assert.equal(url,siteUrl);const r=await wp('inspection',{grant});if(r.status!==200)throw Error('Read rejected');return r.data;},async list({siteUrl:url,grant,resource,page,perPage}){assert.equal(url,siteUrl);const r=await wp(resource+(page?'?page='+page+'&per_page='+perPage:''),{grant});if(r.status!==200)throw Error('Inventory rejected');return r.data;},async execute(url,body){assert.equal(url,siteUrl);const r=await wp('drafts/execute',{method:'POST',body});if(r.status!==200)throw Error('Draft write rejected');return r.data;},async read(url,id,grant){assert.equal(url,siteUrl);const r=await wp('drafts/'+id,{grant});if(r.status!==200)throw Error('Draft read rejected');return r.data;}};
+const grants=new DurableOperationGrantStore(rpc);
+const store=new SupabaseDraftWorkflowStore(rpc);
+const service=new DraftWorkflowService(connections,store,grants,client,new OfflineDraftProvider(),true);
+const pairingStore={
+ async initiate(i){let row=(await q('SELECT * FROM public.wordpress_site_connections WHERE user_id=$1 AND site_url=$2',[i.userId,i.siteUrl])).rows[0];if(row?.status==='connected')return {ok:false,reason:'already_connected'};if(row?.status==='revoked')return {ok:false,reason:'invalid_state'};if(!row)row=(await q("INSERT INTO public.wordpress_site_connections(user_id,site_url,status) VALUES($1,$2,'pending') RETURNING *",[i.userId,i.siteUrl])).rows[0];const r=await q('SELECT * FROM public.wp_manager_create_pairing_challenge($1,$2,$3,$4)',[row.id,i.userId,i.challengeDigest,i.expiresAt]);return r.rows.length?{ok:true,value:row}:{ok:false,reason:'unavailable'};},
+ async confirm(i){const row=(await q('SELECT * FROM public.wp_manager_confirm_pairing_challenge(p_connection_id=>$1,p_site_id=>$2,p_site_url=>$3,p_challenge_digest=>$4)',[i.connectionId,i.siteId,i.siteUrl,i.challengeDigest])).rows[0];if(row?.outcome!=='connected')return {ok:false,reason:'invalid_or_expired'};return {ok:true,value:(await q('SELECT * FROM public.wordpress_site_connections WHERE id=$1',[i.connectionId])).rows[0]};},
+ async revoke(i){const row=(await q("UPDATE public.wordpress_site_connections SET status='revoked',revoked_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND user_id=$2 RETURNING *",[i.connectionId,i.userId])).rows[0];return row?{ok:true,value:row}:{ok:false,reason:'not_found'};}
+};
+const authenticate=async(req,reply)=>{const token=req.headers.authorization;const userId=token==='Bearer synthetic-owner'?owner:token==='Bearer synthetic-foreign'?foreign:null;if(!userId)return reply.code(401).send({success:false});req.user={id:userId,app_metadata:{role:'customer'},user_metadata:{}};req.accessToken=token;};
+const api=async(path,{body,who='owner',method=body===undefined?'GET':'POST'}={})=>{const r=await fetch('http://127.0.0.1:3000/api/wp-manager'+path,{method,headers:{...(who?{Authorization:'Bearer synthetic-'+who}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000)});return {status:r.status,data:await r.json()};};
+let connectionId;
+async function proposal(type='post',extra={}){const r=await api('/sites/'+connectionId+'/drafts/proposals',{body:{instruction:'Synthetic '+type+'\n\nSafe content with a backslash \\ and Unicode café.',post_type:type,...extra}});assert.equal(r.status,201,'proposal status');return r.data.action;}
+async function approve(a){const r=await api('/drafts/'+a.id+'/approve',{body:{payload_digest:a.payload_digest}});assert.equal(r.status,200,'approval status');return r.data.action;}
+async function execute(a){return api('/drafts/'+a.id+'/execute',{body:{payload_digest:a.payload_digest}});}
+try{
+ await q("CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid PRIMARY KEY,raw_user_meta_data jsonb DEFAULT '{}'::jsonb); CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$; GRANT USAGE ON SCHEMA public,auth TO anon,authenticated,service_role;");
+ await q('INSERT INTO auth.users(id) VALUES($1),($2)',[owner,foreign]);
+ const migrations=(await readdir('/app/migrations')).filter(p=>p.endsWith('.sql')).sort();for(const f of migrations)await q(await readFile('/app/migrations/'+f,'utf8'));
+ await registerWpManagerRoutes(app,{authenticate,pairingService:new PairingService(pairingStore),inspectionService:new SiteInspectionService(connections,client,grants),inventoryService:new SiteInventoryService(connections,client,grants),draftWorkflowService:service,controlledActionService:null,controlledWritesEnabled:false,listSites:async(id)=>({data:(await q("SELECT id,site_url FROM public.wordpress_site_connections WHERE user_id=$1 AND status='connected'",[id])).rows,error:null})});
+ await app.listen({host:'0.0.0.0',port:3000});
+ await check('actual plugin activation and external HTTP block',async()=>{assert.equal(installation.plugin_active,true);assert.equal((await control({operation:'external_block'})).blocked,true);});
+ let pairing;
+ await check('actual plugin secure pairing via backend and PG challenge',async()=>{const r=await api('/pairing/initiate',{body:{site_url:siteUrl}});assert.equal(r.status,201);pairing=r.data.pairing;connectionId=pairing.connection_id;assert.equal((await control({operation:'pair',...pairing})).ok,true);});
+ await check('pairing replay rejected and unauthorized inventory denied',async()=>{const r=await api('/pairing/confirm',{body:{connection_id:connectionId,challenge:pairing.challenge,site_id:installation.site_id,site_url:siteUrl}});assert.ok(r.status>=400);assert.equal((await api('/sites',{who:null})).status,401);assert.equal((await api('/sites/'+connectionId+'/inspection',{who:'foreign'})).status,404);});
+ await check('actual core inspection and five inventory resources',async()=>{assert.equal((await api('/sites/'+connectionId+'/inspection')).status,200);for(const resource of ['posts','pages','media','plugins','themes'])assert.equal((await api('/sites/'+connectionId+'/'+resource)).status,200,resource);});
+ const conn=await connections.findOwnedConnected({userId:owner,connectionId});
+ await check('durable grant survives a new store instance and consumes once concurrently',async()=>{const grant=await grants.issue(conn);const replica=new DurableOperationGrantStore(rpc);const args={grant,siteId:conn.site_id,siteUrl};const values=await Promise.all([replica.consume(args),grants.consume(args)]);assert.deepEqual(values.sort(),[false,true]);});
+ await check('expired grant and browser direct access denied',async()=>{const grant=await grants.issue(conn);const hash=createHash('sha256').update(grant).digest();await q("UPDATE private.wordpress_operation_grants SET created_at=clock_timestamp()-interval '1 minute',expires_at=clock_timestamp()-interval '1 second' WHERE digest=$1",[hash]);assert.equal(await grants.consume({grant,siteId:conn.site_id,siteUrl}),false);const db=await pool.connect();try{await db.query('BEGIN; SET LOCAL ROLE authenticated');await assert.rejects(db.query('SELECT * FROM private.wordpress_operation_grants'));}finally{await db.query('ROLLBACK');db.release();}});
+ const initial=(await control({operation:'counts'})).drafts;let post;
+ await check('post proposal requires exact approval and single concurrent execution',async()=>{post=await proposal();assert.equal((await execute(post)).status,409);assert.equal((await api('/drafts/'+post.id+'/approve',{body:{payload_digest:'0'.repeat(64)}})).status,409);await approve(post);const results=await Promise.all([execute(post),execute(post)]);assert.equal(results.filter(r=>r.status===200).length,1);post=results.find(r=>r.status===200).data.action;assert.equal(post.status,'succeeded');assert.equal((await control({operation:'counts'})).drafts,initial+1);const actual=await control({operation:'post',id:post.result_post_id});assert.equal(actual.status,'draft');assert.equal(actual.content,post.payload.content);assert.equal((await execute(post)).data.action.result_post_id,post.result_post_id);});
+ let page;
+ await check('actual unpublished page creation and readback',async()=>{page=await proposal('page');await approve(page);const r=await execute(page);assert.equal(r.status,200);page=r.data.action;const actual=await control({operation:'post',id:page.result_post_id});assert.equal(actual.type,'page');assert.equal(actual.status,'draft');});
+ await check('foreign action access and approval rejected',async()=>{assert.equal((await api('/drafts/'+post.id,{who:'foreign'})).status,404);assert.equal((await api('/drafts/'+page.id+'/approve',{who:'foreign',body:{payload_digest:page.payload_digest}})).status,404);});
+ let inspected;
+ await check('existing draft inspection and approved edit',async()=>{const r=await api('/sites/'+connectionId+'/drafts/'+post.result_post_id);assert.equal(r.status,200);inspected=r.data.draft;const edit=await proposal('post',{post_id:inspected.id,expected_modified_gmt:inspected.modified_gmt,expected_content_digest:inspected.content_digest});await approve(edit);assert.equal((await execute(edit)).status,200);});
+ await check('stale edit rejects overwrite and enters uncertain history without retry',async()=>{const r=await api('/sites/'+connectionId+'/drafts/'+post.result_post_id);const d=r.data.draft;const edit=await proposal('post',{post_id:d.id,expected_modified_gmt:d.modified_gmt,expected_content_digest:d.content_digest});await approve(edit);await control({operation:'modify_draft',id:d.id});assert.equal((await execute(edit)).status,503);assert.equal((await api('/drafts/'+edit.id)).data.action.status,'uncertain');assert.equal((await execute(edit)).status,409);assert.equal((await control({operation:'post',id:d.id})).content,'<p>Changed by synthetic external editor.</p>');});
+ await check('published content and missing grants are rejected by actual plugin',async()=>{assert.ok((await api('/sites/'+connectionId+'/drafts/1')).status>=400);assert.ok((await wp('drafts/'+post.result_post_id)).status>=400);assert.ok((await wp('drafts/execute',{method:'POST',body:{action_type:'publish'}})).status>=400);});
+ await check('WordPress capability enforcement blocks configured subscriber actor',async()=>{await control({operation:'actor_role',role:'subscriber'});assert.ok((await api('/sites/'+connectionId+'/drafts/'+page.result_post_id)).status>=400);await control({operation:'actor_role',role:'administrator'});});
+ await check('durable audit/history survives new service instance',async()=>{const replica=new SupabaseDraftWorkflowStore(rpc);const history=await replica.list(owner,connectionId);assert.ok(history.length>=4);assert.ok((await q('SELECT count(*)::int AS n FROM private.wordpress_draft_audit')).rows[0].n>=10);assert.equal((await replica.list(foreign,connectionId)).length,0);});
+ await check('connection revocation invalidates outstanding grant and further operations',async()=>{const grant=await grants.issue(conn);assert.equal((await api('/connections/'+connectionId+'/revoke',{body:{}})).status,200);assert.equal(await grants.consume({grant,siteId:conn.site_id,siteUrl}),false);assert.equal((await api('/sites/'+connectionId+'/inspection')).status,404);});
+ await writeFile('/fixture/evidence.json',JSON.stringify({success:true,actual_wordpress_core:true,auth:'synthetic server fixture',provider:'offline deterministic',transport:'fixed internal WordPress origin mapping',checks,checks_passed:checks.length,migrations:migrations.length,publishing_enabled:false,production_writes_enabled:false},null,2));
+}catch(error){console.error('Actual WordPress assertion failed:',error.message);process.exitCode=1;}
+finally{await app.close();await pool.end();}
