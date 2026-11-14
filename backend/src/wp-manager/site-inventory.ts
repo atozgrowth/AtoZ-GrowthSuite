@@ -22,7 +22,8 @@ export type MediaInventoryItem = {
   width: number | null; height: number | null; uploaded_at: string | null; public_url: string;
 };
 export type PluginInventoryItem = { name: string; version: string; active: boolean };
-export type InventoryItem = ContentInventoryItem | MediaInventoryItem | PluginInventoryItem;
+export type ThemeInventoryItem = { name: string; version: string; active: boolean; parent: string | null; update_available: boolean | null };
+export type InventoryItem = ContentInventoryItem | MediaInventoryItem | PluginInventoryItem | ThemeInventoryItem;
 export type InventoryResponse = {
   identity: { site_id: string; site_url: string };
   mode: "read-only";
@@ -93,7 +94,7 @@ function paginationInput(value: unknown, fallback: number, maximum: number) {
 
 export function sanitizeInventory(value: unknown, connection: InspectionConnection, resource: InventoryResource): InventoryResponse {
   const root = objectValue(value);
-  const paginated = resource !== "plugins";
+  const paginated = resource !== "plugins" && resource !== "themes";
   exactKeys(root, paginated ? ["identity", "mode", "resource", "pagination", "items"] : ["identity", "mode", "resource", "items"]);
   const identity = objectValue(root.identity);
   exactKeys(identity, ["site_id", "site_url"]);
@@ -102,7 +103,7 @@ export function sanitizeInventory(value: unknown, connection: InspectionConnecti
     normalizeSiteUrl(identity.site_url) !== connection.site_url ||
     root.mode !== "read-only" || root.resource !== resource || !Array.isArray(root.items)
   ) throw new Error("inventory identity mismatch");
-  if (root.items.length > (resource === "plugins" ? 500 : MAX_PER_PAGE)) throw new Error("too many items");
+  if (root.items.length > (["plugins", "themes"].includes(resource) ? 500 : MAX_PER_PAGE)) throw new Error("too many items");
 
   let pagination: Pagination | undefined;
   if (paginated) {
@@ -138,6 +139,12 @@ export function sanitizeInventory(value: unknown, connection: InspectionConnecti
         uploaded_at: dateValue(item.uploaded_at), public_url: safePublicUrl(item.public_url, false) as string,
       } satisfies MediaInventoryItem;
     }
+    if (resource === "themes") {
+      exactKeys(item, ["name", "version", "active", "parent", "update_available"]);
+      if (typeof item.active !== "boolean" || (item.update_available !== null && typeof item.update_available !== "boolean")) throw new Error("invalid theme state");
+      return { name: stringValue(item.name, 300), version: stringValue(item.version, 64), active: item.active,
+        parent: nullableString(item.parent, 300), update_available: item.update_available } satisfies ThemeInventoryItem;
+    }
     exactKeys(item, ["name", "version", "active"]);
     if (typeof item.active !== "boolean") throw new Error("invalid active state");
     return { name: stringValue(item.name, 300), version: stringValue(item.version, 64), active: item.active } satisfies PluginInventoryItem;
@@ -156,7 +163,7 @@ export class SiteInventoryService {
     let connectionId: string, page: number | undefined, perPage: number | undefined;
     try {
       connectionId = requireUuid(input.connectionId);
-      if (input.resource !== "plugins") {
+      if (input.resource !== "plugins" && input.resource !== "themes") {
         page = paginationInput(input.page, 1, MAX_PAGE);
         perPage = paginationInput(input.perPage, DEFAULT_PER_PAGE, MAX_PER_PAGE);
       }

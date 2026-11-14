@@ -44,7 +44,7 @@ class ATOZ_Growth_REST_API {
             )
         );
 
-        foreach ( array( 'posts', 'pages', 'media', 'plugins' ) as $resource ) {
+        foreach ( array( 'posts', 'pages', 'media', 'plugins', 'themes' ) as $resource ) {
             register_rest_route(
                 self::NAMESPACE,
                 '/' . $resource,
@@ -52,7 +52,7 @@ class ATOZ_Growth_REST_API {
                     'methods'             => WP_REST_Server::READABLE,
                     'callback'            => array( __CLASS__, 'get_' . $resource ),
                     'permission_callback' => array( __CLASS__, 'authorize_inventory' ),
-                    'args'                => 'plugins' === $resource ? array() : array(
+                    'args'                => in_array( $resource, array( 'plugins', 'themes' ), true ) ? array() : array(
                         'page' => array(
                             'default' => 1,
                             'validate_callback' => array( __CLASS__, 'validate_page' ),
@@ -164,8 +164,8 @@ class ATOZ_Growth_REST_API {
         if (
             200 === $status_code &&
             is_array( $payload ) &&
-            ! empty( $payload['success'] ) &&
-            ! empty( $payload['authorized'] )
+            isset( $payload['success'] ) && true === $payload['success'] &&
+            isset( $payload['authorized'] ) && true === $payload['authorized']
         ) {
             return true;
         }
@@ -284,7 +284,7 @@ class ATOZ_Growth_REST_API {
         }
         $route = (string) $request->get_route();
         $scope = basename( $route );
-        if ( ! in_array( $scope, array( 'posts', 'pages', 'media', 'plugins' ), true ) ) {
+        if ( ! in_array( $scope, array( 'posts', 'pages', 'media', 'plugins', 'themes' ), true ) ) {
             return new WP_Error( 'atoz_invalid_scope', 'The read scope is invalid.', array( 'status' => 403 ) );
         }
         $grant = trim( (string) $request->get_header( 'X-AtoZ-Inspection-Grant' ) );
@@ -297,7 +297,7 @@ class ATOZ_Growth_REST_API {
             'site_url' => untrailingslashit( home_url( '/' ) ),
             'scope' => $scope,
         );
-        if ( 'plugins' !== $scope ) {
+        if ( ! in_array( $scope, array( 'plugins', 'themes' ), true ) ) {
             $body['page'] = (int) $request->get_param( 'page' );
             $body['per_page'] = (int) $request->get_param( 'per_page' );
         }
@@ -310,7 +310,7 @@ class ATOZ_Growth_REST_API {
             return new WP_Error( 'atoz_inspection_authorization_unavailable', 'Inspection authorization is temporarily unavailable.', array( 'status' => 503 ) );
         }
         $payload = json_decode( wp_remote_retrieve_body( $response ), true );
-        if ( 200 === (int) wp_remote_retrieve_response_code( $response ) && is_array( $payload ) && ! empty( $payload['success'] ) && ! empty( $payload['authorized'] ) ) return true;
+        if ( 200 === (int) wp_remote_retrieve_response_code( $response ) && is_array( $payload ) && isset( $payload['success'] ) && true === $payload['success'] && isset( $payload['authorized'] ) && true === $payload['authorized'] ) return true;
         return new WP_Error( 'atoz_inspection_not_authorized', 'The inspection grant is invalid or expired.', array( 'status' => 403 ) );
     }
 
@@ -404,6 +404,36 @@ class ATOZ_Growth_REST_API {
             'identity' => self::inventory_identity(), 'mode' => 'read-only', 'resource' => 'media',
             'pagination' => array( 'page' => $page, 'per_page' => $per_page, 'total_items' => (int) $query->found_posts, 'total_pages' => (int) $query->max_num_pages ),
             'items' => $items,
+        ) );
+    }
+
+    /** Read cached theme metadata only. Never refresh updates or change themes. */
+    public static function get_themes() {
+        $installed = wp_get_themes();
+        $active = get_stylesheet();
+        $updates = get_site_transient( 'update_themes' );
+        $last_checked = is_object( $updates ) && isset( $updates->last_checked ) ? (int) $updates->last_checked : 0;
+        $known = is_object( $updates ) && isset( $updates->checked, $updates->response ) &&
+            is_array( $updates->checked ) && is_array( $updates->response ) &&
+            $last_checked >= time() - 86400 && $last_checked <= time() + 300;
+        $items = array();
+        foreach ( $installed as $stylesheet => $theme ) {
+            $parent = $theme->parent();
+            $has_checked_version = $known && isset( $updates->checked[ $stylesheet ] ) &&
+                (string) $updates->checked[ $stylesheet ] === (string) $theme->get( 'Version' );
+            $items[] = array(
+                'name' => (string) $theme->get( 'Name' ),
+                'version' => (string) $theme->get( 'Version' ),
+                'active' => (string) $stylesheet === (string) $active,
+                'parent' => $parent ? (string) $parent->get( 'Name' ) : null,
+                // NULL means no matching cached observation, not "up to date".
+                'update_available' => $has_checked_version ?
+                    ( isset( $updates->response ) && is_array( $updates->response ) && isset( $updates->response[ $stylesheet ] ) ) : null,
+            );
+        }
+        usort( $items, function( $a, $b ) { return strcasecmp( $a['name'], $b['name'] ); } );
+        return rest_ensure_response( array(
+            'identity' => self::inventory_identity(), 'mode' => 'read-only', 'resource' => 'themes', 'items' => $items,
         ) );
     }
 

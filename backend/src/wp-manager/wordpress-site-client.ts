@@ -42,7 +42,7 @@ function siteReadUrl(siteUrl: string, resource: "inspection" | InventoryResource
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) throw new Error("invalid read origin");
   url.pathname = url.pathname.replace(/\/+$/, "") + `/wp-json/atoz-growth/v1/${resource}`;
   url.search = "";
-  if (resource !== "inspection" && resource !== "plugins") {
+  if (resource !== "inspection" && resource !== "plugins" && resource !== "themes") {
     url.searchParams.set("page", String(page));
     url.searchParams.set("per_page", String(perPage));
   }

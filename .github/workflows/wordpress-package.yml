@@ -1,0 +1,36 @@
+name: WordPress plugin package
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  plugin-contracts:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['7.4', '8.3']
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: PHP syntax and standalone synthetic contract checks
+        run: |
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/source:ro" -w /source php:${{ matrix.php }}-cli sh -c 'find wp-manager-plugin -name "*.php" -print0 | xargs -0 -n1 php -l && php wp-manager-plugin/tests/read-only-contract.php'
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - run: python3 -m unittest discover -s scripts/wordpress -p 'test_package.py'
+      - run: python3 scripts/wordpress/package_plugin.py --output plugin-package
+      - run: python3 scripts/wordpress/package_plugin.py --output plugin-package --verify
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wordpress-plugin-0.4.1-${{ github.event.pull_request.head.sha || github.sha }}
+          path: plugin-package/
+          if-no-files-found: error
+          retention-days: 30

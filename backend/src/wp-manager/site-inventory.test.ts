@@ -73,7 +73,7 @@ test("inventory routes reject unauthenticated requests and expose no mutation me
   });
   const getResponse = await app.inject({ method: "GET", url: `/api/wp-manager/sites/${connection.id}/posts` });
   assert.equal(getResponse.statusCode, 401);
-  for (const resource of ["posts", "pages", "media", "plugins"]) {
+  for (const resource of ["posts", "pages", "media", "plugins", "themes"]) {
     for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
       const result = await app.inject({ method, url: `/api/wp-manager/sites/${connection.id}/${resource}` });
       assert.equal(result.statusCode, 404);
@@ -89,4 +89,31 @@ test("grants cannot be reused for a different resource or page", () => {
   assert.equal(grants.consume({ grant, siteId: connection.site_id, siteUrl: connection.site_url, scope: "pages", page: 2, perPage: 20 }), false);
   const second = grants.issue(connection, { scope: "posts", page: 2, perPage: 20 });
   assert.equal(grants.consume({ grant: second, siteId: connection.site_id, siteUrl: connection.site_url, scope: "posts", page: 1, perPage: 20 }), false);
+});
+
+const themeItem = { name: "Synthetic Theme", version: "1.0", active: true, parent: null, update_available: null };
+function themeResponse(items: unknown[] = [themeItem]) {
+  return { identity: { site_id: connection.site_id, site_url: connection.site_url }, mode: "read-only", resource: "themes", items };
+}
+test("theme inventory uses a site/owner/scope-bound read grant without pagination", async () => {
+  const value = await serviceWith(themeResponse()).list({ userId: connection.user_id, accessToken: "synthetic-token", connectionId: connection.id, resource: "themes" });
+  assert.equal(value.ok, true);
+  if (value.ok) assert.deepEqual(value.value.items, [themeItem]);
+  assert.deepEqual(await serviceWith(themeResponse(), false).list({ userId: connection.user_id, accessToken: "synthetic-token", connectionId: connection.id, resource: "themes" }), { ok: false, reason: "not_found" });
+});
+test("theme inventory rejects malformed cached update states and hidden fields", async () => {
+  for (const item of [{ ...themeItem, update_available: "yes" }, { ...themeItem, active: "yes" }, { ...themeItem, path: "/private/theme" }]) {
+    assert.equal((await serviceWith(themeResponse([item])).list({ userId: connection.user_id, accessToken: "synthetic-token", connectionId: connection.id, resource: "themes" })).ok, false);
+  }
+});
+test("theme grants reject scope substitution, expire, and cannot be replayed", () => {
+  let now = 1000;
+  const grants = new InspectionGrantStore(() => now, 30_000, () => "A".repeat(43));
+  const grant = grants.issue(connection, { scope: "themes" });
+  assert.equal(grants.consume({ grant, siteId: connection.site_id, siteUrl: connection.site_url, scope: "themes" }), true);
+  assert.equal(grants.consume({ grant, siteId: connection.site_id, siteUrl: connection.site_url, scope: "themes" }), false);
+  const substituted = grants.issue(connection, { scope: "themes" });
+  assert.equal(grants.consume({ grant: substituted, siteId: connection.site_id, siteUrl: connection.site_url, scope: "plugins" }), false);
+  const expired = grants.issue(connection, { scope: "themes" }); now += 30_000;
+  assert.equal(grants.consume({ grant: expired, siteId: connection.site_id, siteUrl: connection.site_url, scope: "themes" }), false);
 });
