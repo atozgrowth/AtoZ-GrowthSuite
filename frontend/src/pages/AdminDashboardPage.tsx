@@ -10,7 +10,7 @@ export function AdminDashboardPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
-  useEffect(() => { document.title = "Administration · A2Z GrowthSuite"; }, []);
+  useEffect(() => { document.title = "Administration · A to Z Growth Suite"; }, []);
   useEffect(() => {
     const controller = new AbortController(); setData(null); setError("");
     void workspaceRequest<{ overview: Overview }>("/admin/overview", session!.access_token, controller.signal)

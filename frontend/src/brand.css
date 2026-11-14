@@ -1,0 +1,66 @@
+/* Official starting palette. Original PNG palette sampling remains blocked;
+   dark variants provide >= 4.5:1 white-text contrast at both gradient endpoints. */
+:root {
+  --brand-pink: #ff0054;
+  --brand-cyan: #00b8c8;
+  --brand-gold: #eab51c;
+  --brand-pink-ink: #b5003f;
+  --brand-teal-ink: #00616b;
+  --brand-gradient: linear-gradient(110deg, var(--brand-pink), var(--brand-cyan));
+  --brand-action-gradient: linear-gradient(110deg, var(--brand-pink-ink), var(--brand-teal-ink));
+  --brand-tint: #fff0f5;
+  --brand-cyan-tint: #e9f8fa;
+  --brand-focus: #00717e;
+  --brand-surface: #f7f9fc;
+  --brand-dark: #111827;
+  --brand-radius: 12px;
+  --brand-space: 8px;
+  --purple: var(--brand-pink-ink);
+  --purple-dark: #920033;
+  --navy: var(--brand-dark);
+  --muted: #5f6c82;
+  background: var(--brand-surface);
+  color-scheme: light;
+}
+.brand { min-width: 0; max-width: 100%; }
+.brand-name { font-size: 17px; line-height: 1.35; font-weight: 650; }
+.brand-name strong { color: inherit; font-weight: 800; display: block; }
+.sidebar-brand { height: 88px; }
+.sidebar .brand-name { color: #fff; }
+.sidebar .brand-name strong { color: #7ce4ec; }
+.mobile-brand .brand-name { display: block; font-size: 12px; }
+.mobile-brand .brand-name strong { color: var(--brand-teal-ink); }
+.login-intro { background: radial-gradient(ellipse at 15% 20%, #b5003f38, transparent 60%), linear-gradient(135deg, #111827, #123c47); }
+.login-intro .brand-name { font-size: 20px; }
+.login-intro .brand-name strong { color: #7ce4ec; }
+.login-message .eyebrow.light { color: #7ce4ec; }
+.login-card .eyebrow { color: var(--brand-pink-ink); }
+.login-card { position: relative; }
+.login-card::before { content: ""; display: block; height: 4px; width: 64px; border-radius: 99px; background: var(--brand-gradient); margin-bottom: 24px; }
+.button.primary, .nav-link.active { background: var(--brand-action-gradient); color: #fff; }
+.button.primary:hover { background: linear-gradient(110deg, #920033, #004e57); }
+.button.primary:disabled { opacity: 1; background: #dfe4ec; color: #596579; }
+.button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid var(--brand-focus); outline-offset: 3px; }
+.sidebar a:focus-visible { outline-color: #7ce4ec; }
+.auth-mode-switch button.active { color: var(--brand-pink-ink); }
+.avatar, .card-icon, .metric-icon, .empty-icon, .placeholder-icon, .property-icon,
+.onboarding-list li>span, .state-icon.site { background: var(--brand-tint); color: var(--brand-pink-ink); }
+.info-banner, .admin-banner { background: var(--brand-cyan-tint); color: #005b64; border-color: #b9e6eb; }
+.status-pill.readonly { background: var(--brand-cyan-tint); color: #005b64; }
+.dashboard-hero { background: radial-gradient(ellipse at 90% 10%, #00b8c832, transparent 55%), linear-gradient(115deg, #35202b, #143d47); }
+.hero-label, .hero-caption { color: #b8edf1; }
+.dashboard-hero p { color: #dbe8ee; }
+.hero-tile { background: linear-gradient(145deg, #ff005438, #00b8c840); border-color: #7ce4ec55; }
+.hero-satellite { background: #00616b99; border-color: #7ce4ec88; }
+.hero-button { color: #005b64; }
+.orbit, .orbit-two { border-color: #7ce4ec44; }
+.workspace-monogram { background: #143d47; color: #b8edf1; }
+.pairing-value.sensitive code { color: var(--brand-pink-ink); }
+@media (max-width: 760px) {
+  .login-mobile-brand .brand-name { font-size: 20px; }
+  .topbar { gap: 8px; }
+  .topbar-actions { gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
