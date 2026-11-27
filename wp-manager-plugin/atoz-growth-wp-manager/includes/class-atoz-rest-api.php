@@ -79,7 +79,7 @@ class ATOZ_Growth_REST_API {
                 'service' => 'A to Z WordPress AI Manager',
                 'version' => ATOZ_GROWTH_WP_MANAGER_VERSION,
                 'mode'    => ATOZ_Growth_Endpoints::writes_enabled() ? 'isolated-drafts' : 'read-only',
-                'publishing_enabled' => false,
+                'publishing_enabled' => ATOZ_Growth_Endpoints::publishing_enabled(),
             )
         );
     }

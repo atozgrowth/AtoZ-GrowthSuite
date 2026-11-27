@@ -67,6 +67,7 @@ export function WordPressManagerPage() {
   const [inspectedSiteId, setInspectedSiteId] = useState<string | null>(null);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState("");
+  const [assistantTargetId, setAssistantTargetId] = useState("");
   const inspectionGeneration=useRef(0);
   const [confirmRevoke,setConfirmRevoke]=useState(false),[revokeAgreed,setRevokeAgreed]=useState(false),[revokeBusy,setRevokeBusy]=useState(false),[revokeError,setRevokeError]=useState('');
   const revokeLock=useRef(false);
@@ -200,6 +201,7 @@ export function WordPressManagerPage() {
     const generation=++inspectionGeneration.current;
     setConfirmRevoke(false);setRevokeAgreed(false);setRevokeError('');
     setInspectedSiteId(site.id);
+    setAssistantTargetId("");
     setInspection(null);
     setInspectionError("");
     setInspectionLoading(true);
@@ -563,9 +565,9 @@ export function WordPressManagerPage() {
         </section>
       )}
       {inspectedSite && typeof inspectedSite.id === "string" && session?.access_token && <section className="panel connection-management" aria-labelledby="connection-management-title"><div className="panel-heading"><div><h2 id="connection-management-title">Connection management</h2><p>{host(inspectedSite.site_url)}</p></div><button className="button secondary" disabled={revokeBusy} onClick={()=>{setConfirmRevoke(true);setRevokeAgreed(false);setRevokeError('');}}>Revoke this connection</button></div>{confirmRevoke&&<div><p>Revocation removes this account’s access and invalidates pending grants. Reconnection requires a fresh pairing and WordPress approval.</p><label className="draft-approval-check"><input type="checkbox" checked={revokeAgreed} onChange={e=>setRevokeAgreed(e.target.checked)} disabled={revokeBusy}/>I want to revoke access to {host(inspectedSite.site_url)}.</label><div className="header-actions"><button className="button primary" disabled={!revokeAgreed||revokeBusy} onClick={()=>void revokeSelectedConnection()}>{revokeBusy?'Revoking…':'Confirm revocation'}</button><button className="button secondary" disabled={revokeBusy} onClick={()=>setConfirmRevoke(false)}>Keep connection</button></div></div>}{revokeError&&<p role="alert">{revokeError}</p>}</section>}
-      {inspectedSite && typeof inspectedSite.id === "string" && session?.access_token && <WordPressDraftPanel key={inspectedSite.id} accessToken={session.access_token} connectionId={inspectedSite.id} siteUrl={inspectedSite.site_url}/>}
+      {inspectedSite && typeof inspectedSite.id === "string" && session?.access_token && <WordPressDraftPanel key={inspectedSite.id} accessToken={session.access_token} connectionId={inspectedSite.id} siteUrl={inspectedSite.site_url} initialTargetId={assistantTargetId}/>}
       {inspectedSite && typeof inspectedSite.id === "string" && session?.access_token && (
-        <WordPressInventoryPanel accessToken={session.access_token} connectionId={inspectedSite.id} />
+        <WordPressInventoryPanel accessToken={session.access_token} connectionId={inspectedSite.id} onSelectDraft={(id)=>setAssistantTargetId(String(id))} />
       )}
       {CONTROLLED_ACTION_UI_ENABLED && inspectedSite && typeof inspectedSite.id === "string" && session?.access_token && (
         <WordPressActionApprovalPanel

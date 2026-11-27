@@ -11,6 +11,7 @@ import {
   type RpcClient,
 } from "./durable-grants.js";
 import { SecureWordPressDraftClient } from "./draft-site-client.js";
+import { createAgentDraftProvider } from "./content-draft-provider.js";
 export type DraftPayload = {
   title: string;
   content: string;
@@ -25,7 +26,7 @@ export type DraftAction = {
   connection_id: string;
   site_id: string;
   site_url: string;
-  action_type: "create_post_draft" | "create_page_draft" | "edit_draft";
+  action_type: "create_post_draft" | "create_page_draft" | "edit_draft" | "publish_draft";
   status:
     | "proposed"
     | "approved"
@@ -47,7 +48,7 @@ export type DraftAction = {
 export type DraftDocument = {
   id: number;
   type: "post" | "page";
-  status: "draft";
+  status: "draft" | "publish";
   title: string;
   content: string;
   modified_gmt: string;
@@ -57,7 +58,7 @@ export interface DraftProvider {
   generate(input: {
     instruction: string;
     postType: "post" | "page";
-  }): Promise<{ title: string; content: string }>;
+  }, context?: { ownerId: string; accessToken: string; connectionId: string; siteId: string; siteUrl: string }): Promise<{ title: string; content: string }>;
 }
 export interface WordPressDraftClient {
   execute(
@@ -72,6 +73,7 @@ export interface WordPressDraftClient {
   ): Promise<unknown>;
   read(siteUrl: string, postId: number, grant: string): Promise<unknown>;
   receipt?(siteUrl: string, action: Pick<DraftAction, "id" | "action_type" | "payload_digest">, grant: string): Promise<unknown>;
+  readPublished?(siteUrl: string, postId: number, action: Pick<DraftAction, "id" | "payload_digest">, grant: string): Promise<unknown>;
 }
 export interface DraftWorkflowStore {
   create(input: {
@@ -217,7 +219,7 @@ function action(v: unknown): DraftAction {
     raw = String(a.payload_digest),
     payload_digest = digest(raw.startsWith("\\x") ? raw.slice(2) : raw);
   if (
-    !["create_post_draft", "create_page_draft", "edit_draft"].includes(
+    !["create_post_draft", "create_page_draft", "edit_draft", "publish_draft"].includes(
       String(a.action_type),
     ) ||
     ![
@@ -306,6 +308,9 @@ export function draftTestModeEnabled(env: NodeJS.ProcessEnv = process.env) {
     env.WP_MANAGER_CONTROLLED_WRITES_ENABLED === "true"
   );
 }
+export function draftPublishTestModeEnabled(env: NodeJS.ProcessEnv = process.env) {
+  return draftTestModeEnabled(env) && env.WP_MANAGER_TEST_PUBLISH_ENABLED === "true";
+}
 export class DraftWorkflowService {
   constructor(
     private readonly connections: InspectionConnectionStore,
@@ -314,6 +319,8 @@ export class DraftWorkflowService {
     private readonly client: WordPressDraftClient,
     private readonly provider: DraftProvider = new OfflineDraftProvider(),
     public readonly enabled = false,
+    public readonly publishEnabled = false,
+    public readonly providerName = "offline-mock",
   ) {}
   private async connection(
     ownerId: string,
@@ -370,6 +377,8 @@ export class DraftWorkflowService {
       const generated = await this.provider.generate({
         instruction,
         postType: b.post_type as "post" | "page",
+      }, {
+        ownerId: i.ownerId, accessToken: i.accessToken, connectionId: c.id, siteId: c.site_id, siteUrl: c.site_url,
       });
       const payload = safePayload({
         ...generated,
@@ -400,6 +409,28 @@ export class DraftWorkflowService {
     } catch {
       return { ok: false, reason: "unavailable" };
     }
+  }
+  async proposePublish(i: {
+    ownerId: string; accessToken: string; connectionId: unknown; body: unknown;
+  }): Promise<DraftResult<DraftAction>> {
+    if (!this.enabled || !this.publishEnabled) return { ok: false, reason: "unavailable" };
+    let b: Record<string, unknown>, c: InspectionConnection | null;
+    try {
+      b = object(i.body); keys(b, ["post_id", "expected_modified_gmt", "expected_content_digest"]);
+      postId(b.post_id); text(b.expected_modified_gmt, 64); digest(b.expected_content_digest);
+      c = await this.connection(i.ownerId, i.accessToken, i.connectionId);
+    } catch { return { ok: false, reason: "invalid_input" }; }
+    if (!c) return { ok: false, reason: "not_found" };
+    const inspected = await this.inspect({ ownerId: i.ownerId, accessToken: i.accessToken, connectionId: c.id, postId: b.post_id });
+    if (!inspected.ok) return inspected;
+    if (inspected.value.modified_gmt !== b.expected_modified_gmt || inspected.value.content_digest !== b.expected_content_digest)
+      return { ok: false, reason: "invalid_state" };
+    try {
+      const payload = safePayload({ title: inspected.value.title, content: inspected.value.content, post_id: inspected.value.id,
+        post_type: inspected.value.type, expected_modified_gmt: inspected.value.modified_gmt, expected_content_digest: inspected.value.content_digest });
+      const value = await this.store.create({ ownerId: i.ownerId, connectionId: c.id, actionType: "publish_draft", payload, payloadDigest: draftPayloadDigest(payload) });
+      return value ? { ok: true, value } : { ok: false, reason: "invalid_state" };
+    } catch { return { ok: false, reason: "unavailable" }; }
   }
   async list(i: {
     ownerId: string;
@@ -467,7 +498,7 @@ export class DraftWorkflowService {
       return { ok: false, reason: "invalid_input" };
     }
   }
-  private document(raw: unknown, c: InspectionConnection): DraftDocument {
+  private document(raw: unknown, c: InspectionConnection, expectedStatus: "draft" | "publish" = "draft"): DraftDocument {
     const e = object(raw),
       identity = object(e.identity),
       d = object(e.draft);
@@ -475,14 +506,14 @@ export class DraftWorkflowService {
       e.success !== true ||
       id(identity.site_id) !== c.site_id.toLowerCase() ||
       normalizeSiteUrl(identity.site_url) !== normalizeSiteUrl(c.site_url) ||
-      d.status !== "draft" ||
+      d.status !== expectedStatus ||
       (d.type !== "post" && d.type !== "page")
     )
       throw Error("Draft identity");
     const result = {
       id: postId(d.id),
       type: d.type,
-      status: "draft",
+      status: expectedStatus,
       title: text(d.title, 200),
       content: text(d.content, 100000),
       modified_gmt: text(d.modified_gmt, 64),
@@ -547,6 +578,7 @@ export class DraftWorkflowService {
       );
       if (!conn) return { ok: false, reason: "not_found" };
       c = conn;
+      if (detail.value.action_type === "publish_draft" && !this.publishEnabled) return { ok: false, reason: "unavailable" };
       if (detail.value.status === "succeeded") return detail;
       const claimed = await this.store.transition({
         ownerId: i.ownerId,
@@ -572,13 +604,13 @@ export class DraftWorkflowService {
         payload_digest: a.payload_digest,
         payload: a.payload,
       });
-      const executed = this.document(raw, c),
-        expectedType =
-          a.action_type === "create_page_draft"
-            ? "page"
-            : a.action_type === "edit_draft"
-              ? a.payload.post_type
-              : "post";
+      const expectedStatus = a.action_type === "publish_draft" ? "publish" : "draft";
+      const executed = this.document(raw, c, expectedStatus),
+        expectedType = a.action_type === "create_page_draft"
+          ? "page"
+          : a.action_type === "edit_draft" || a.action_type === "publish_draft"
+            ? a.payload.post_type
+            : "post";
       if (
         executed.type !== expectedType ||
         executed.title !== a.payload.title ||
@@ -586,17 +618,20 @@ export class DraftWorkflowService {
         (a.payload.post_id !== undefined && executed.id !== a.payload.post_id)
       )
         throw Error("Verification");
-      const read = await this.inspect({
-        ownerId: i.ownerId,
-        accessToken: i.accessToken,
-        connectionId: c.id,
-        postId: executed.id,
-      });
+      let verified: DraftDocument;
+      if (a.action_type === "publish_draft") {
+        if (!this.client.readPublished) throw Error("Published readback unavailable");
+        const readGrant = await this.grants.issueOperation(c, { scope: "published_read", postId: executed.id, actionId: a.id, payloadDigest: a.payload_digest });
+        try { verified = this.document(await this.client.readPublished(c.site_url, executed.id, a, readGrant), c, "publish"); }
+        finally { await this.grants.revoke(readGrant); }
+      } else {
+        const read = await this.inspect({ ownerId: i.ownerId, accessToken: i.accessToken, connectionId: c.id, postId: executed.id });
+        if (!read.ok) throw Error("Verification");
+        verified = read.value;
+      }
       if (
-        !read.ok ||
-        read.value.title !== a.payload.title ||
-        read.value.content !== a.payload.content ||
-        read.value.type !== expectedType
+        verified.status !== expectedStatus || verified.title !== a.payload.title ||
+        verified.content !== a.payload.content || verified.type !== expectedType
       )
         throw Error("Verification");
       const value = await this.store.transition({
@@ -642,11 +677,22 @@ export class DraftWorkflowService {
       const raw = await this.client.receipt(c.site_url, a, grant);
       const receipt = object(raw);
       if (receipt.action_id !== a.id || receipt.action_type !== a.action_type || receipt.payload_digest !== d) throw Error("Receipt binding");
-      const draft = this.document(raw, c);
-      const expectedType = a.action_type === "create_page_draft" ? "page" : a.action_type === "edit_draft" ? a.payload.post_type : "post";
+      const expectedStatus = a.action_type === "publish_draft" ? "publish" : "draft";
+      const draft = this.document(raw, c, expectedStatus);
+      const expectedType = a.action_type === "create_page_draft" ? "page" : a.action_type === "edit_draft" || a.action_type === "publish_draft" ? a.payload.post_type : "post";
       if (draft.type !== expectedType || draft.title !== a.payload.title || draft.content !== a.payload.content || (a.payload.post_id !== undefined && draft.id !== a.payload.post_id)) throw Error("Receipt content");
-      const read = await this.inspect({ ownerId: i.ownerId, accessToken: i.accessToken, connectionId: c.id, postId: draft.id });
-      if (!read.ok || read.value.type !== expectedType || read.value.title !== a.payload.title || read.value.content !== a.payload.content) throw Error("Readback mismatch");
+      let verified: DraftDocument;
+      if (a.action_type === "publish_draft") {
+        if (!this.client.readPublished) throw Error("Published readback unavailable");
+        const readGrant = await this.grants.issueOperation(c, { scope: "published_read", postId: draft.id, actionId: a.id, payloadDigest: a.payload_digest });
+        try { verified = this.document(await this.client.readPublished(c.site_url, draft.id, a, readGrant), c, "publish"); }
+        finally { await this.grants.revoke(readGrant); }
+      } else {
+        const read = await this.inspect({ ownerId: i.ownerId, accessToken: i.accessToken, connectionId: c.id, postId: draft.id });
+        if (!read.ok) throw Error("Readback mismatch");
+        verified = read.value;
+      }
+      if (verified.status !== expectedStatus || verified.type !== expectedType || verified.title !== a.payload.title || verified.content !== a.payload.content) throw Error("Readback mismatch");
       const value = await this.store.transition({ ownerId: i.ownerId, actionId: a.id, payloadDigest: d, transition: "succeeded", postId: draft.id });
       return value ? { ok: true, value } : { ok: false, reason: "uncertain" };
     } catch { return { ok: false, reason: "uncertain" }; }
@@ -669,6 +715,13 @@ export class DraftWorkflowService {
           ? { success: true, authorized: true, post_id: target }
           : null;
       }
+      if (b.scope === "published_read") {
+        keys(b, ["grant", "scope", "site_id", "site_url", "post_id", "action_id", "action_type", "payload_digest"]);
+        if (b.action_type !== "publish_draft") return null;
+        const post = postId(b.post_id), actionId = id(b.action_id), d = digest(b.payload_digest);
+        const authorized = await this.grants.consumeOperation({ grant: text(b.grant, 128), scope: "published_read", siteId: id(b.site_id), siteUrl: normalizeSiteUrl(b.site_url), postId: post, actionId, payloadDigest: d, actionType: "publish_draft" });
+        return authorized ? { success: true, authorized: true, post_id: post, action_id: actionId, action_type: "publish_draft", payload_digest: d } : null;
+      }
       if (b.scope !== undefined && b.scope !== "draft_receipt") return null;
       keys(b, [
         "grant",
@@ -682,7 +735,7 @@ export class DraftWorkflowService {
         d = digest(b.payload_digest),
         actionType = String(b.action_type);
       if (
-        !["create_post_draft", "create_page_draft", "edit_draft"].includes(
+        !["create_post_draft", "create_page_draft", "edit_draft", "publish_draft"].includes(
           actionType,
         )
       )
@@ -719,12 +772,15 @@ export function createDraftWorkflowService() {
   const rpc = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   }) as unknown as RpcClient;
+  const connections = new SupabaseInspectionConnectionStore(url, anon);
   return new DraftWorkflowService(
-    new SupabaseInspectionConnectionStore(url, anon),
+    connections,
     new SupabaseDraftWorkflowStore(rpc),
     new DurableOperationGrantStore(rpc),
     new SecureWordPressDraftClient(),
-    new OfflineDraftProvider(),
+    createAgentDraftProvider(connections),
     true,
+    draftPublishTestModeEnabled(),
+    "offline-mock",
   );
 }

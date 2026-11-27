@@ -1,4 +1,4 @@
-A to Z WordPress AI Manager 0.5.1
+A to Z WordPress AI Manager 0.6.0
 
 Default behavior
 ----------------

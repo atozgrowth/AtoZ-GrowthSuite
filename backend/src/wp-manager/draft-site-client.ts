@@ -112,4 +112,12 @@ export class SecureWordPressDraftClient implements WordPressDraftClient {
       throw Error("Invalid draft id");
     return json(siteUrl, "drafts/" + postId, "GET", grant);
   }
+  readPublished(siteUrl: string, postId: number, action: { id: string; payload_digest: string }, grant: string) {
+    if (!Number.isSafeInteger(postId) || postId <= 0) throw Error("Invalid published content id");
+    return json(siteUrl, "published/" + postId, "GET", grant, undefined, {
+      "X-AtoZ-Action-Type": "publish_draft",
+      "X-AtoZ-Action-Id": action.id,
+      "X-AtoZ-Payload-Digest": action.payload_digest,
+    });
+  }
 }

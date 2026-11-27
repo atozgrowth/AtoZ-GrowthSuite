@@ -50,6 +50,7 @@ define('AUTOMATIC_UPDATER_DISABLED',true);
 define('ATOZ_GROWTH_ISOLATED_TEST_MODE',true);
 define('ATOZ_GROWTH_TEST_BACKEND_URL','http://backend:3000');
 define('ATOZ_GROWTH_TEST_WRITES_ENABLED',true);
+define('ATOZ_GROWTH_TEST_PUBLISH_ENABLED',true);
 define('ATOZ_GROWTH_TEST_ACTOR_ID',1);
 """
             wp=start('wordpress','--tmpfs','/var/www/html:rw,size=256m','--mount',f'type=bind,src={ROOT}/wp-manager-plugin/atoz-growth-wp-manager,dst=/var/www/html/wp-content/plugins/atoz-growth-wp-manager,readonly','--mount',f'type=bind,src={ROOT}/integration/wordpress/abilities-fixture.php,dst=/var/www/html/wp-content/plugins/atoz-abilities-fixture.php,readonly','--mount',f'type=bind,src={ROOT}/integration/wordpress/control.php,dst=/var/www/html/fixture-control.php,readonly','-e','WORDPRESS_DB_HOST=database','-e','WORDPRESS_DB_USER=wordpress','-e','WORDPRESS_DB_PASSWORD=synthetic-wordpress','-e','WORDPRESS_DB_NAME=wordpress','-e','WORDPRESS_CONFIG_EXTRA='+config)
@@ -73,7 +74,7 @@ echo json_encode(['wordpress'=>get_bloginfo('version'),'plugin_active'=>is_plugi
             raw=docker('exec','-i',wp,'php',input=install).stdout
             installation=json.loads(raw[raw.rfind('{'):]);assert installation['plugin_active'] is True and installation['abilities_fixture_active'] is True
             (fixture/'installation.json').write_text(json.dumps(installation))
-            runner=start('backend','--mount',f'type=bind,src={ROOT}/backend/dist,dst=/app/dist,readonly','--mount',f'type=bind,src={ROOT}/backend/node_modules,dst=/app/node_modules,readonly','--mount',f'type=bind,src={ROOT}/integration/wordpress,dst=/app/integration,readonly','--mount',f'type=bind,src={fixture},dst=/fixture','--mount',f'type=bind,src={ROOT}/backend/supabase/migrations,dst=/app/migrations,readonly','-w','/app','-e','NODE_ENV=test','-e','WP_MANAGER_DRAFT_TEST_MODE=isolated','-e','WP_MANAGER_CONTROLLED_WRITES_ENABLED=true','-e','SUPABASE_URL=https://example.supabase.co','-e','SUPABASE_ANON_KEY=synthetic-anon','-e','SUPABASE_SERVICE_ROLE_KEY=',command=('node','/app/integration/exercise.mjs'))
+            runner=start('backend','--mount',f'type=bind,src={ROOT}/backend/dist,dst=/app/dist,readonly','--mount',f'type=bind,src={ROOT}/backend/node_modules,dst=/app/node_modules,readonly','--mount',f'type=bind,src={ROOT}/integration/wordpress,dst=/app/integration,readonly','--mount',f'type=bind,src={fixture},dst=/fixture','--mount',f'type=bind,src={ROOT}/backend/supabase/migrations,dst=/app/migrations,readonly','-w','/app','-e','NODE_ENV=test','-e','WP_MANAGER_DRAFT_TEST_MODE=isolated','-e','WP_MANAGER_CONTROLLED_WRITES_ENABLED=true','-e','WP_MANAGER_TEST_PUBLISH_ENABLED=true','-e','SUPABASE_URL=https://example.supabase.co','-e','SUPABASE_ANON_KEY=synthetic-anon','-e','SUPABASE_SERVICE_ROLE_KEY=',command=('node','/app/integration/exercise.mjs'))
             result=docker('wait',runner,timeout=300)
             if result.stdout.strip()!='0':
                 print(docker('logs',runner,check=False).stderr[-2000:])

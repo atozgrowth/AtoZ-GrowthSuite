@@ -23,7 +23,7 @@ jobs:
         working-directory: frontend
       - run: npm run test:e2e
         working-directory: frontend
-      - name: Build seven-screen preview index
+      - name: Build full screen preview index
         run: npm run preview:index
         working-directory: frontend
         env:

@@ -6,6 +6,7 @@ import {
   DraftWorkflowService,
   OfflineDraftProvider,
   draftContentDigest,
+  draftPublishTestModeEnabled,
   draftTestModeEnabled,
   type DraftAction,
   type DraftDocument,
@@ -240,6 +241,17 @@ test("isolated mode needs all three settings; production never enables the facto
     }),
     true,
   );
+});
+test("publishing stays separately disabled unless the isolated test gate is explicitly true", () => {
+  const isolated = {
+    NODE_ENV: "test",
+    WP_MANAGER_DRAFT_TEST_MODE: "isolated",
+    WP_MANAGER_CONTROLLED_WRITES_ENABLED: "true",
+  };
+  assert.equal(draftPublishTestModeEnabled(isolated), false);
+  assert.equal(draftPublishTestModeEnabled({ ...isolated, WP_MANAGER_TEST_PUBLISH_ENABLED: "TRUE" }), false);
+  assert.equal(draftPublishTestModeEnabled({ ...isolated, WP_MANAGER_TEST_PUBLISH_ENABLED: "true" }), true);
+  assert.equal(draftPublishTestModeEnabled({ ...isolated, NODE_ENV: "production", WP_MANAGER_TEST_PUBLISH_ENABLED: "true" }), false);
 });
 test("offline provider escapes untrusted content and supplies no executable model tools", async () => {
   const p = await new OfflineDraftProvider().generate({
