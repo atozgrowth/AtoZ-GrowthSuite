@@ -3,6 +3,7 @@ on:
   pull_request:
   workflow_dispatch:
 permissions:
+  actions: read
   contents: read
 jobs:
   durable-database:
