@@ -12,6 +12,8 @@ import {
 } from "./durable-grants.js";
 import { SecureWordPressDraftClient } from "./draft-site-client.js";
 import { createAgentDraftProvider } from "./content-draft-provider.js";
+import { loadContentProviderConfig } from "../agents/content-provider-config.js";
+import { SupabaseAiUsageLedger } from "../agents/ai-usage-ledger.js";
 export type DraftPayload = {
   title: string;
   content: string;
@@ -19,6 +21,11 @@ export type DraftPayload = {
   post_type?: "post" | "page";
   expected_modified_gmt?: string;
   expected_content_digest?: string;
+  category_ids?: number[];
+  tag_ids?: number[];
+  featured_media_id?: number;
+  revision_id?: number;
+  expected_revision_digest?: string;
 };
 export type DraftAction = {
   id: string;
@@ -26,7 +33,7 @@ export type DraftAction = {
   connection_id: string;
   site_id: string;
   site_url: string;
-  action_type: "create_post_draft" | "create_page_draft" | "edit_draft" | "publish_draft";
+  action_type: "create_post_draft" | "create_page_draft" | "edit_draft" | "publish_draft" | "restore_revision";
   status:
     | "proposed"
     | "approved"
@@ -53,6 +60,9 @@ export type DraftDocument = {
   content: string;
   modified_gmt: string;
   content_digest: string;
+  category_ids?: number[];
+  tag_ids?: number[];
+  featured_media_id?: number | null;
 };
 export interface DraftProvider {
   generate(input: {
@@ -74,7 +84,10 @@ export interface WordPressDraftClient {
   read(siteUrl: string, postId: number, grant: string): Promise<unknown>;
   receipt?(siteUrl: string, action: Pick<DraftAction, "id" | "action_type" | "payload_digest">, grant: string): Promise<unknown>;
   readPublished?(siteUrl: string, postId: number, action: Pick<DraftAction, "id" | "payload_digest">, grant: string): Promise<unknown>;
+  revisions?(siteUrl: string, postId: number, grant: string): Promise<unknown>;
+  revision?(siteUrl: string, postId: number, revisionId: number, grant: string): Promise<unknown>;
 }
+export type DraftRevision = { id: number; parent_id: number; modified_gmt: string; title: string; content: string; content_digest: string };
 export interface DraftWorkflowStore {
   create(input: {
     ownerId: string;
@@ -132,7 +145,7 @@ function text(v: unknown, max: number) {
     throw Error("Invalid text");
   return v;
 }
-function safePayload(v: unknown): DraftPayload {
+function safePayload(v: unknown, restoring = false): DraftPayload {
   const p = object(v);
   keys(
     p,
@@ -142,18 +155,29 @@ function safePayload(v: unknown): DraftPayload {
       "post_type",
       "expected_modified_gmt",
       "expected_content_digest",
+      "category_ids", "tag_ids", "featured_media_id",
+      "revision_id", "expected_revision_digest",
     ],
   );
-  const title = text(p.title, 200),
+  const title = restoring && typeof p.title === "string" && p.title.length <= 200 ? p.title : text(p.title, 200),
     content = text(p.content, 100000);
   // Deliberately limited offline-provider grammar, not a general HTML sanitizer.
   if (
     title !== title.trim() ||
     /[<>\u0000-\u001f]/.test(title) ||
-    !/^<p>(?:[^<>]|<\/p>\n<p>)*<\/p>$/.test(content)
+    (!restoring && !/^<p>(?:[^<>]|<\/p>\n<p>)*<\/p>$/.test(content))
   )
     throw Error("Unsafe content");
   const result: DraftPayload = { title, content };
+  for (const field of ["category_ids", "tag_ids"] as const) {
+    if (p[field] !== undefined) {
+      if (!Array.isArray(p[field]) || p[field].length > 100 || p[field].some((n) => !Number.isSafeInteger(n) || n <= 0) || new Set(p[field]).size !== p[field].length) throw Error("Invalid taxonomy selection");
+      result[field] = [...p[field] as number[]].sort((a, b) => a - b);
+    }
+  }
+  if (p.featured_media_id !== undefined) result.featured_media_id = postId(p.featured_media_id);
+  if (p.revision_id !== undefined) result.revision_id = postId(p.revision_id);
+  if (p.expected_revision_digest !== undefined) result.expected_revision_digest = digest(p.expected_revision_digest);
   if (p.post_id !== undefined) {
     result.post_id = postId(p.post_id);
     if (p.post_type !== "post" && p.post_type !== "page") throw Error();
@@ -166,6 +190,7 @@ function safePayload(v: unknown): DraftPayload {
     )
   )
     throw Error();
+  if ((result.revision_id === undefined) !== (result.expected_revision_digest === undefined) || (result.revision_id !== undefined && result.post_id === undefined)) throw Error("Invalid revision binding");
   return result;
 }
 export function canonicalDraftPayload(p: DraftPayload) {
@@ -180,6 +205,10 @@ export function canonicalDraftPayload(p: DraftPayload) {
           expected_modified_gmt: p.expected_modified_gmt,
           expected_content_digest: p.expected_content_digest,
         }),
+    ...(p.category_ids === undefined ? {} : { category_ids: p.category_ids }),
+    ...(p.tag_ids === undefined ? {} : { tag_ids: p.tag_ids }),
+    ...(p.featured_media_id === undefined ? {} : { featured_media_id: p.featured_media_id }),
+    ...(p.revision_id === undefined ? {} : { revision_id: p.revision_id, expected_revision_digest: p.expected_revision_digest }),
   });
 }
 export function draftPayloadDigest(p: DraftPayload) {
@@ -215,11 +244,11 @@ export class OfflineDraftProvider implements DraftProvider {
 }
 function action(v: unknown): DraftAction {
   const a = object(v),
-    payload = safePayload(a.payload),
+    payload = safePayload(a.payload, a.action_type === "restore_revision"),
     raw = String(a.payload_digest),
     payload_digest = digest(raw.startsWith("\\x") ? raw.slice(2) : raw);
   if (
-    !["create_post_draft", "create_page_draft", "edit_draft", "publish_draft"].includes(
+    !["create_post_draft", "create_page_draft", "edit_draft", "publish_draft", "restore_revision"].includes(
       String(a.action_type),
     ) ||
     ![
@@ -309,7 +338,17 @@ export function draftTestModeEnabled(env: NodeJS.ProcessEnv = process.env) {
   );
 }
 export function draftPublishTestModeEnabled(env: NodeJS.ProcessEnv = process.env) {
-  return draftTestModeEnabled(env) && env.WP_MANAGER_TEST_PUBLISH_ENABLED === "true";
+  return (draftTestModeEnabled(env) && env.WP_MANAGER_TEST_PUBLISH_ENABLED === "true") ||
+    ((env.APP_STAGE === "development" || env.APP_STAGE === "staging") &&
+      env.WP_MANAGER_DRAFT_WORKFLOW_ENABLED === "true" &&
+      env.WP_MANAGER_CONTROLLED_WRITES_ENABLED === "true" &&
+      env.WP_MANAGER_NONPRODUCTION_PUBLISH_ENABLED === "true");
+}
+export function draftWorkflowRuntimeEnabled(env: NodeJS.ProcessEnv = process.env) {
+  if (draftTestModeEnabled(env)) return true;
+  return (env.APP_STAGE === "development" || env.APP_STAGE === "staging") &&
+    env.WP_MANAGER_DRAFT_WORKFLOW_ENABLED === "true" &&
+    env.WP_MANAGER_CONTROLLED_WRITES_ENABLED === "true";
 }
 export class DraftWorkflowService {
   constructor(
@@ -321,6 +360,7 @@ export class DraftWorkflowService {
     public readonly enabled = false,
     public readonly publishEnabled = false,
     public readonly providerName = "offline-mock",
+    public readonly mode = "isolated-test-only",
   ) {}
   private async connection(
     ownerId: string,
@@ -355,7 +395,7 @@ export class DraftWorkflowService {
       keys(
         b,
         ["instruction", "post_type"],
-        ["post_id", "expected_modified_gmt", "expected_content_digest"],
+        ["post_id", "expected_modified_gmt", "expected_content_digest", "category_ids", "tag_ids", "featured_media_id"],
       );
       instruction = text(b.instruction, 8000);
       if (b.post_type !== "post" && b.post_type !== "page") throw Error();
@@ -382,6 +422,9 @@ export class DraftWorkflowService {
       });
       const payload = safePayload({
         ...generated,
+        ...(b.category_ids === undefined ? {} : { category_ids: b.category_ids }),
+        ...(b.tag_ids === undefined ? {} : { tag_ids: b.tag_ids }),
+        ...(b.featured_media_id === undefined ? {} : { featured_media_id: b.featured_media_id }),
         ...(b.post_id === undefined
           ? {}
           : {
@@ -426,11 +469,47 @@ export class DraftWorkflowService {
     if (inspected.value.modified_gmt !== b.expected_modified_gmt || inspected.value.content_digest !== b.expected_content_digest)
       return { ok: false, reason: "invalid_state" };
     try {
-      const payload = safePayload({ title: inspected.value.title, content: inspected.value.content, post_id: inspected.value.id,
+      const payload = safePayload({ title: inspected.value.title, content: inspected.value.content, ...(inspected.value.type === "post" && inspected.value.category_ids !== undefined ? { category_ids: inspected.value.category_ids } : {}), ...(inspected.value.type === "post" && inspected.value.tag_ids !== undefined ? { tag_ids: inspected.value.tag_ids } : {}), ...(inspected.value.featured_media_id == null ? {} : { featured_media_id: inspected.value.featured_media_id }), post_id: inspected.value.id,
         post_type: inspected.value.type, expected_modified_gmt: inspected.value.modified_gmt, expected_content_digest: inspected.value.content_digest });
       const value = await this.store.create({ ownerId: i.ownerId, connectionId: c.id, actionType: "publish_draft", payload, payloadDigest: draftPayloadDigest(payload) });
       return value ? { ok: true, value } : { ok: false, reason: "invalid_state" };
     } catch { return { ok: false, reason: "unavailable" }; }
+  }
+  async listRevisions(i: { ownerId: string; accessToken: string; connectionId: unknown; postId: unknown }): Promise<DraftResult<DraftRevision[]>> {
+    if (!this.client.revisions) return { ok: false, reason: "unavailable" };
+    let grant: string | undefined;
+    try {
+      const c = await this.connection(i.ownerId, i.accessToken, i.connectionId); if (!c) return { ok: false, reason: "not_found" };
+      const target = postId(typeof i.postId === "string" ? Number(i.postId) : i.postId);
+      grant = await this.grants.issueOperation(c, { scope: "draft_read", postId: target });
+      const raw = object(await this.client.revisions(c.site_url, target, grant));
+      if (raw.success !== true || !Array.isArray(raw.revisions) || raw.revisions.length > 100) throw Error("Revision response");
+      const revisions = raw.revisions.map((v) => { const r = object(v); if (typeof r.title !== "string" || r.title.length > 200) throw Error("Revision title"); const revision = { id: postId(r.id), parent_id: postId(r.parent_id), modified_gmt: text(r.modified_gmt, 64), title: r.title, content: text(r.content, 100000), content_digest: digest(r.content_digest) }; if (revision.parent_id !== target || draftContentDigest(revision) !== revision.content_digest) throw Error("Revision integrity"); return revision; });
+      return { ok: true, value: revisions };
+    } catch { return { ok: false, reason: "unavailable" }; }
+    finally { if (grant) try { await this.grants.revoke(grant); } catch {} }
+  }
+  async proposeRestore(i: { ownerId: string; accessToken: string; connectionId: unknown; body: unknown }): Promise<DraftResult<DraftAction>> {
+    if (!this.enabled || !this.client.revision) return { ok: false, reason: "unavailable" };
+    let c: InspectionConnection | null, b: Record<string, unknown>;
+    try { b = object(i.body); keys(b, ["post_id", "revision_id", "expected_modified_gmt", "expected_content_digest", "expected_revision_digest"]); postId(b.post_id); postId(b.revision_id); text(b.expected_modified_gmt, 64); digest(b.expected_content_digest); digest(b.expected_revision_digest); c = await this.connection(i.ownerId, i.accessToken, i.connectionId); }
+    catch { return { ok: false, reason: "invalid_input" }; }
+    if (!c) return { ok: false, reason: "not_found" };
+    const current = await this.inspect({ ownerId: i.ownerId, accessToken: i.accessToken, connectionId: c.id, postId: b.post_id });
+    if (!current.ok) return current;
+    if (current.value.modified_gmt !== b.expected_modified_gmt || current.value.content_digest !== b.expected_content_digest) return { ok: false, reason: "invalid_state" };
+    let grant: string | undefined;
+    try {
+      grant = await this.grants.issueOperation(c, { scope: "draft_read", postId: postId(b.post_id) });
+      const raw = object(await this.client.revision(c.site_url, postId(b.post_id), postId(b.revision_id), grant));
+      if (raw.success !== true) throw Error("Revision unavailable");
+      const r = object(raw.revision); if (typeof r.title !== "string" || r.title.length > 200) throw Error("Revision title"); const revision: DraftRevision = { id: postId(r.id), parent_id: postId(r.parent_id), modified_gmt: text(r.modified_gmt, 64), title: r.title, content: text(r.content, 100000), content_digest: digest(r.content_digest) };
+      if (revision.id !== b.revision_id || revision.parent_id !== current.value.id || revision.content_digest !== b.expected_revision_digest || draftContentDigest(revision) !== revision.content_digest) return { ok: false, reason: "invalid_state" };
+      const payload = safePayload({ title: revision.title, content: revision.content, post_id: current.value.id, post_type: current.value.type, expected_modified_gmt: current.value.modified_gmt, expected_content_digest: current.value.content_digest, revision_id: revision.id, expected_revision_digest: revision.content_digest }, true);
+      const value = await this.store.create({ ownerId: i.ownerId, connectionId: c.id, actionType: "restore_revision", payload, payloadDigest: draftPayloadDigest(payload) });
+      return value ? { ok: true, value } : { ok: false, reason: "invalid_state" };
+    } catch { return { ok: false, reason: "unavailable" }; }
+    finally { if (grant) try { await this.grants.revoke(grant); } catch {} }
   }
   async list(i: {
     ownerId: string;
@@ -498,6 +577,33 @@ export class DraftWorkflowService {
       return { ok: false, reason: "invalid_input" };
     }
   }
+  async cancel(i: {
+    ownerId: string;
+    accessToken: string;
+    actionId: unknown;
+    body: unknown;
+  }): Promise<DraftResult<DraftAction>> {
+    if (!this.enabled) return { ok: false, reason: "unavailable" };
+    try {
+      const b = object(i.body);
+      keys(b, ["payload_digest"]);
+      const d = digest(b.payload_digest), detail = await this.get(i);
+      if (!detail.ok) return detail;
+      if (d !== detail.value.payload_digest || !["proposed", "approved"].includes(detail.value.status))
+        return { ok: false, reason: "invalid_state" };
+      if (!(await this.connection(i.ownerId, i.accessToken, detail.value.connection_id)))
+        return { ok: false, reason: "not_found" };
+      const value = await this.store.transition({
+        ownerId: i.ownerId,
+        actionId: detail.value.id,
+        payloadDigest: d,
+        transition: "cancelled",
+      });
+      return value ? { ok: true, value } : { ok: false, reason: "invalid_state" };
+    } catch {
+      return { ok: false, reason: "invalid_input" };
+    }
+  }
   private document(raw: unknown, c: InspectionConnection, expectedStatus: "draft" | "publish" = "draft"): DraftDocument {
     const e = object(raw),
       identity = object(e.identity),
@@ -514,11 +620,21 @@ export class DraftWorkflowService {
       id: postId(d.id),
       type: d.type,
       status: expectedStatus,
-      title: text(d.title, 200),
+      title: typeof d.title === "string" && d.title.length <= 200 ? d.title : text(d.title, 200),
       content: text(d.content, 100000),
       modified_gmt: text(d.modified_gmt, 64),
       content_digest: digest(d.content_digest),
     } as DraftDocument;
+    for (const [field, out] of [["category_ids", "category_ids"], ["tag_ids", "tag_ids"]] as const) {
+      if (d[field] !== undefined) {
+        if (!Array.isArray(d[field]) || d[field].length > 100 || d[field].some((n) => !Number.isSafeInteger(n) || n <= 0)) throw Error("Draft taxonomy");
+        result[out] = [...d[field] as number[]].sort((a, b) => a - b);
+      }
+    }
+    if (d.featured_media_id !== undefined) {
+      if (d.featured_media_id !== null && (!Number.isSafeInteger(d.featured_media_id) || Number(d.featured_media_id) <= 0)) throw Error("Draft media");
+      result.featured_media_id = d.featured_media_id as number | null;
+    }
     if (draftContentDigest(result) !== result.content_digest)
       throw Error("Draft digest");
     return result;
@@ -608,16 +724,20 @@ export class DraftWorkflowService {
       const executed = this.document(raw, c, expectedStatus),
         expectedType = a.action_type === "create_page_draft"
           ? "page"
-          : a.action_type === "edit_draft" || a.action_type === "publish_draft"
+          : a.action_type === "edit_draft" || a.action_type === "publish_draft" || a.action_type === "restore_revision"
             ? a.payload.post_type
             : "post";
       if (
         executed.type !== expectedType ||
         executed.title !== a.payload.title ||
         executed.content !== a.payload.content ||
+        (a.payload.category_ids !== undefined && JSON.stringify(executed.category_ids) !== JSON.stringify(a.payload.category_ids)) ||
+        (a.payload.tag_ids !== undefined && JSON.stringify(executed.tag_ids) !== JSON.stringify(a.payload.tag_ids)) ||
+        (a.payload.featured_media_id !== undefined && executed.featured_media_id !== a.payload.featured_media_id) ||
         (a.payload.post_id !== undefined && executed.id !== a.payload.post_id)
-      )
+      ) {
         throw Error("Verification");
+      }
       let verified: DraftDocument;
       if (a.action_type === "publish_draft") {
         if (!this.client.readPublished) throw Error("Published readback unavailable");
@@ -631,9 +751,13 @@ export class DraftWorkflowService {
       }
       if (
         verified.status !== expectedStatus || verified.title !== a.payload.title ||
-        verified.content !== a.payload.content || verified.type !== expectedType
-      )
+        verified.content !== a.payload.content || verified.type !== expectedType ||
+        (a.payload.category_ids !== undefined && JSON.stringify(verified.category_ids) !== JSON.stringify(a.payload.category_ids)) ||
+        (a.payload.tag_ids !== undefined && JSON.stringify(verified.tag_ids) !== JSON.stringify(a.payload.tag_ids)) ||
+        (a.payload.featured_media_id !== undefined && verified.featured_media_id !== a.payload.featured_media_id)
+      ) {
         throw Error("Verification");
+      }
       const value = await this.store.transition({
         ownerId: i.ownerId,
         actionId: a.id,
@@ -679,8 +803,8 @@ export class DraftWorkflowService {
       if (receipt.action_id !== a.id || receipt.action_type !== a.action_type || receipt.payload_digest !== d) throw Error("Receipt binding");
       const expectedStatus = a.action_type === "publish_draft" ? "publish" : "draft";
       const draft = this.document(raw, c, expectedStatus);
-      const expectedType = a.action_type === "create_page_draft" ? "page" : a.action_type === "edit_draft" || a.action_type === "publish_draft" ? a.payload.post_type : "post";
-      if (draft.type !== expectedType || draft.title !== a.payload.title || draft.content !== a.payload.content || (a.payload.post_id !== undefined && draft.id !== a.payload.post_id)) throw Error("Receipt content");
+      const expectedType = a.action_type === "create_page_draft" ? "page" : a.action_type === "edit_draft" || a.action_type === "publish_draft" || a.action_type === "restore_revision" ? a.payload.post_type : "post";
+      if (draft.type !== expectedType || draft.title !== a.payload.title || draft.content !== a.payload.content || (a.payload.post_id !== undefined && draft.id !== a.payload.post_id) || (a.payload.category_ids !== undefined && JSON.stringify(draft.category_ids) !== JSON.stringify(a.payload.category_ids)) || (a.payload.tag_ids !== undefined && JSON.stringify(draft.tag_ids) !== JSON.stringify(a.payload.tag_ids)) || (a.payload.featured_media_id !== undefined && draft.featured_media_id !== a.payload.featured_media_id)) throw Error("Receipt content");
       let verified: DraftDocument;
       if (a.action_type === "publish_draft") {
         if (!this.client.readPublished) throw Error("Published readback unavailable");
@@ -692,7 +816,7 @@ export class DraftWorkflowService {
         if (!read.ok) throw Error("Readback mismatch");
         verified = read.value;
       }
-      if (verified.status !== expectedStatus || verified.type !== expectedType || verified.title !== a.payload.title || verified.content !== a.payload.content) throw Error("Readback mismatch");
+      if (verified.status !== expectedStatus || verified.type !== expectedType || verified.title !== a.payload.title || verified.content !== a.payload.content || (a.payload.category_ids !== undefined && JSON.stringify(verified.category_ids) !== JSON.stringify(a.payload.category_ids)) || (a.payload.tag_ids !== undefined && JSON.stringify(verified.tag_ids) !== JSON.stringify(a.payload.tag_ids)) || (a.payload.featured_media_id !== undefined && verified.featured_media_id !== a.payload.featured_media_id)) throw Error("Readback mismatch");
       const value = await this.store.transition({ ownerId: i.ownerId, actionId: a.id, payloadDigest: d, transition: "succeeded", postId: draft.id });
       return value ? { ok: true, value } : { ok: false, reason: "uncertain" };
     } catch { return { ok: false, reason: "uncertain" }; }
@@ -735,7 +859,7 @@ export class DraftWorkflowService {
         d = digest(b.payload_digest),
         actionType = String(b.action_type);
       if (
-        !["create_post_draft", "create_page_draft", "edit_draft", "publish_draft"].includes(
+        !["create_post_draft", "create_page_draft", "edit_draft", "publish_draft", "restore_revision"].includes(
           actionType,
         )
       )
@@ -763,24 +887,33 @@ export class DraftWorkflowService {
     }
   }
 }
-export function createDraftWorkflowService() {
-  if (!draftTestModeEnabled()) return null;
-  const url = process.env.SUPABASE_URL?.trim(),
-    anon = process.env.SUPABASE_ANON_KEY?.trim(),
-    key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+export function createDraftWorkflowService(env: NodeJS.ProcessEnv = process.env) {
+  if (!draftWorkflowRuntimeEnabled(env)) return null;
+  const url = env.SUPABASE_URL?.trim(),
+    anon = env.SUPABASE_ANON_KEY?.trim(),
+    key = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !anon || !key) return null;
   const rpc = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   }) as unknown as RpcClient;
   const connections = new SupabaseInspectionConnectionStore(url, anon);
+  let providerConfig;
+  try { providerConfig = loadContentProviderConfig(env); }
+  catch { return null; }
+  const provider = createAgentDraftProvider(
+    connections,
+    providerConfig ?? undefined,
+    providerConfig ? new SupabaseAiUsageLedger(rpc) : undefined,
+  );
   return new DraftWorkflowService(
     connections,
     new SupabaseDraftWorkflowStore(rpc),
     new DurableOperationGrantStore(rpc),
     new SecureWordPressDraftClient(),
-    createAgentDraftProvider(connections),
+    provider,
     true,
-    draftPublishTestModeEnabled(),
-    "offline-mock",
+    draftPublishTestModeEnabled(env),
+    providerConfig?.provider ?? "offline-mock",
+    draftTestModeEnabled(env) ? "isolated-test-only" : "nonproduction",
   );
 }

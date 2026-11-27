@@ -16,7 +16,7 @@ export function createPreparedResponsesModel(options:{model:string;allowedModels
     let response:{status:number;body:unknown};
     try{response=await transport(Object.freeze({url:'https://api.openai.com/v1/responses' as const,method:'POST' as const,headers:Object.freeze({'Content-Type':'application/json' as const}),body}),signal);}catch{throw Error('Provider transport unavailable');}
     if(signal.aborted)throw Error('Deadline');
-    if(response.status===429||response.status===503)throw new TransientContentError('Provider temporarily unavailable');
+    if(response.status===429)throw new TransientContentError('Provider rate limited request');
     if(response.status!==200||!response.body||typeof response.body!=='object'||Array.isArray(response.body))throw Error('Invalid provider response');
     const raw=response.body as Record<string,unknown>;
     if(raw.status!=='completed'||!Array.isArray(raw.output)||!raw.output.length||raw.output.length>10||!raw.usage||typeof raw.usage!=='object'||Array.isArray(raw.usage))throw Error('Incomplete provider response');
@@ -29,4 +29,55 @@ export function createPreparedResponsesModel(options:{model:string;allowedModels
     const usage=raw.usage as Record<string,unknown>;
     return {content,usage:{inputTokens:usage.input_tokens,outputTokens:usage.output_tokens}};
   }};
+}
+
+/** Fixed-host server transport. It is created only after runtime config validation and never exposes the key. */
+export function createOpenAIResponsesTransport(apiKey: string, fetcher: typeof fetch = fetch): PreparedTransport {
+  if (typeof apiKey !== "string" || apiKey.length < 20 || apiKey.length > 512 || /\s/.test(apiKey)) {
+    throw new Error("AI provider credentials are invalid");
+  }
+  return async (request, signal) => {
+    if (signal.aborted) throw new Error("Provider request cancelled");
+    let response: Response;
+    try {
+      response = await fetcher("https://api.openai.com/v1/responses", {
+        method: "POST",
+        redirect: "error",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: request.body,
+        signal,
+      });
+    } catch {
+      throw new Error("Provider transport unavailable");
+    }
+    if (response.status === 429) return { status: 429, body: null };
+    if (!response.ok) return { status: response.status, body: null };
+    const length = Number(response.headers.get("content-length") ?? 0);
+    if (Number.isFinite(length) && length > 65_536) throw new Error("Provider response exceeded its limit");
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Provider response unavailable");
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        total += part.value.byteLength;
+        if (total > 65_536) {
+          await reader.cancel();
+          throw new Error("Provider response exceeded its limit");
+        }
+        chunks.push(part.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    let body: unknown;
+    try { body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+    catch { throw new Error("Provider returned invalid JSON"); }
+    return { status: response.status, body };
+  };
 }

@@ -44,7 +44,7 @@ class ATOZ_Growth_REST_API {
             )
         );
 
-        foreach ( array( 'posts', 'pages', 'media', 'plugins', 'themes' ) as $resource ) {
+        foreach ( array( 'posts', 'pages', 'media', 'plugins', 'themes', 'categories', 'tags' ) as $resource ) {
             register_rest_route(
                 self::NAMESPACE,
                 '/' . $resource,
@@ -326,7 +326,7 @@ class ATOZ_Growth_REST_API {
         }
         $route = (string) $request->get_route();
         $scope = basename( $route );
-        if ( ! in_array( $scope, array( 'posts', 'pages', 'media', 'plugins', 'themes' ), true ) ) {
+        if ( ! in_array( $scope, array( 'posts', 'pages', 'media', 'plugins', 'themes', 'categories', 'tags' ), true ) ) {
             return new WP_Error( 'atoz_invalid_scope', 'The read scope is invalid.', array( 'status' => 403 ) );
         }
         $grant = trim( (string) $request->get_header( 'X-AtoZ-Inspection-Grant' ) );
@@ -415,6 +415,27 @@ class ATOZ_Growth_REST_API {
 
     public static function get_posts( $request ) { return self::content_inventory( 'post', 'posts', $request ); }
     public static function get_pages( $request ) { return self::content_inventory( 'page', 'pages', $request ); }
+
+    /** Public term metadata only; this route cannot create or modify taxonomies. */
+    private static function taxonomy_inventory( $taxonomy, $resource, $request ) {
+        if ( ! taxonomy_exists( $taxonomy ) ) return new WP_Error( 'atoz_taxonomy_unavailable', 'Taxonomy inventory is unavailable.', array( 'status' => 503 ) );
+        $page = (int) $request->get_param( 'page' ); $per_page = (int) $request->get_param( 'per_page' );
+        $total = wp_count_terms( $taxonomy, array( 'hide_empty' => false ) );
+        if ( is_wp_error( $total ) ) return new WP_Error( 'atoz_taxonomy_unavailable', 'Taxonomy inventory is unavailable.', array( 'status' => 503 ) );
+        $total = (int) $total; $pages = $total > 0 ? (int) ceil( $total / $per_page ) : 0;
+        if ( ( 0 === $pages && $page > 1 ) || ( $pages > 0 && $page > $pages ) ) return new WP_Error( 'atoz_page_out_of_range', 'The requested inventory page is out of range.', array( 'status' => 400 ) );
+        $terms = get_terms( array( 'taxonomy' => $taxonomy, 'hide_empty' => false, 'number' => $per_page, 'offset' => ( $page - 1 ) * $per_page, 'orderby' => 'name', 'order' => 'ASC' ) );
+        if ( is_wp_error( $terms ) || ! is_array( $terms ) ) return new WP_Error( 'atoz_taxonomy_unavailable', 'Taxonomy inventory is unavailable.', array( 'status' => 503 ) );
+        $items = array();
+        foreach ( $terms as $term ) {
+            if ( ! is_object( $term ) || ! isset( $term->term_id, $term->name, $term->slug, $term->count, $term->parent ) ) continue;
+            $items[] = array( 'id' => (int) $term->term_id, 'name' => sanitize_text_field( $term->name ), 'slug' => sanitize_title( $term->slug ), 'count' => (int) $term->count, 'parent' => (int) $term->parent );
+        }
+        return rest_ensure_response( array( 'identity' => self::inventory_identity(), 'mode' => 'read-only', 'resource' => $resource,
+            'pagination' => array( 'page' => $page, 'per_page' => $per_page, 'total_items' => $total, 'total_pages' => $pages ), 'items' => $items ) );
+    }
+    public static function get_categories( $request ) { return self::taxonomy_inventory( 'category', 'categories', $request ); }
+    public static function get_tags( $request ) { return self::taxonomy_inventory( 'post_tag', 'tags', $request ); }
 
     public static function get_media( $request ) {
         $page = (int) $request->get_param( 'page' );

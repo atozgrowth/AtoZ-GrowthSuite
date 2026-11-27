@@ -227,7 +227,7 @@ export async function registerWpManagerRoutes(
     },
   );
 
-  for (const resource of ["posts", "pages", "media", "plugins", "themes"] as InventoryResource[]) {
+  for (const resource of ["posts", "pages", "media", "plugins", "themes", "categories", "tags"] as InventoryResource[]) {
     app.get(
       `/api/wp-manager/sites/:connectionId/${resource}`,
       { preHandler: authHandler },

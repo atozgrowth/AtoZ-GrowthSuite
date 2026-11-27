@@ -39,7 +39,8 @@ export async function registerDraftWorkflowRoutes(
     success: true,
     enabled: service?.enabled === true,
     provider: service?.providerName ?? "offline-mock",
-    mode: "isolated-test-only",
+    mode: service?.mode ?? "unavailable",
+    capabilities: { contentGeneration: service?.enabled === true, publishing: service?.publishEnabled === true },
     publishEnabled: service?.publishEnabled === true,
   }));
   app.post("/api/wp-manager/drafts/authorize", async (req, reply) => {
@@ -75,6 +76,11 @@ export async function registerDraftWorkflowRoutes(
       return r.ok ? reply.code(201).send({ success: true, action: r.value }) : failure(reply, r);
     },
   );
+  app.post("/api/wp-manager/sites/:connectionId/drafts/restore-proposals", { preHandler: auth }, async (req: AuthenticatedRequest, reply) => {
+    if (!service) return reply.code(503).send({ success: false });
+    const r = await service.proposeRestore({ ownerId: req.user!.id, accessToken: req.accessToken!, connectionId: (req.params as { connectionId: string }).connectionId, body: req.body });
+    return r.ok ? reply.code(201).send({ success: true, action: r.value }) : failure(reply, r);
+  });
   app.post(
     "/api/wp-manager/sites/:connectionId/drafts/proposals",
     { preHandler: auth },
@@ -106,6 +112,12 @@ export async function registerDraftWorkflowRoutes(
       return r.ok ? { success: true, draft: r.value } : failure(reply, r);
     },
   );
+  app.get("/api/wp-manager/sites/:connectionId/drafts/:postId/revisions", { preHandler: auth }, async (req: AuthenticatedRequest, reply) => {
+    if (!service) return reply.code(503).send({ success: false });
+    const p = req.params as { connectionId: string; postId: string };
+    const r = await service.listRevisions({ ownerId: req.user!.id, accessToken: req.accessToken!, connectionId: p.connectionId, postId: p.postId });
+    return r.ok ? { success: true, revisions: r.value } : failure(reply, r);
+  });
   app.get(
     "/api/wp-manager/drafts/:actionId",
     { preHandler: auth },

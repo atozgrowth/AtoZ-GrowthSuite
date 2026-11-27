@@ -13,7 +13,12 @@ const entries = [
   ["07-mobile-customer-dashboard.png", "Mobile Customer Dashboard", workspace + "/dashboard", "Synthetic customer", 390],
   ["08-wordpress-draft-desktop.png", "WordPress Draft Workspace", workspace + "/wordpress", "Synthetic isolated draft provider", 1440],
   ["09-wordpress-draft-mobile.png", "Mobile WordPress Draft Workspace", workspace + "/wordpress", "Synthetic isolated draft provider", 390],
+  ["10-wordpress-abilities-discovery.png", "WordPress read-only abilities discovery", workspace + "/wordpress", "Synthetic public ability metadata", 1440],
   ["11-wordpress-ai-workflow.png", "WordPress AI proposal, approval and test publish workflow", workspace + "/wordpress", "Synthetic mock AI and isolated publish fixture", 1440],
+  ["12-wordpress-staging-ai.png", "WordPress staging provider label and approval preview", workspace + "/wordpress", "Synthetic intercepted provider and API; no model request", 1440],
+  ["13-wordpress-staging-ai-mobile.png", "Mobile WordPress staging assistant preview", workspace + "/wordpress", "Synthetic intercepted provider and API; no model request", 390],
+  ["14-wordpress-taxonomy-revision-desktop.png", "WordPress taxonomy, existing image and revision approval", workspace + "/wordpress", "Synthetic existing terms, media and saved revision", 1440],
+  ["15-wordpress-taxonomy-revision-mobile.png", "Mobile WordPress taxonomy and revision approval", workspace + "/wordpress", "Synthetic existing terms, media and saved revision", 390],
 ];
 const checksum = data => createHash("sha256").update(data).digest("hex");
 const screenshots = [];

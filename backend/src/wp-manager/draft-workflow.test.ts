@@ -8,6 +8,7 @@ import {
   draftContentDigest,
   draftPublishTestModeEnabled,
   draftTestModeEnabled,
+  draftWorkflowRuntimeEnabled,
   type DraftAction,
   type DraftDocument,
   type DraftWorkflowStore,
@@ -83,6 +84,8 @@ function fixture() {
       if (i.transition === "approved" && a.status === "proposed" && connected) {
         a.status = "approved";
         a.approved_at = new Date().toISOString();
+      } else if (i.transition === "cancelled" && ["proposed", "approved"].includes(a.status) && connected) {
+        a.status = "cancelled";
       } else if (
         i.transition === "executing" &&
         a.status === "approved" &&
@@ -253,6 +256,14 @@ test("publishing stays separately disabled unless the isolated test gate is expl
   assert.equal(draftPublishTestModeEnabled({ ...isolated, WP_MANAGER_TEST_PUBLISH_ENABLED: "true" }), true);
   assert.equal(draftPublishTestModeEnabled({ ...isolated, NODE_ENV: "production", WP_MANAGER_TEST_PUBLISH_ENABLED: "true" }), false);
 });
+test("nonproduction workflow is opt-in and production can never enable it", () => {
+  const staging = { NODE_ENV: "production", APP_STAGE: "staging", WP_MANAGER_DRAFT_WORKFLOW_ENABLED: "true", WP_MANAGER_CONTROLLED_WRITES_ENABLED: "true" };
+  assert.equal(draftWorkflowRuntimeEnabled({ ...staging, APP_STAGE: "production" }), false);
+  assert.equal(draftWorkflowRuntimeEnabled({ ...staging, WP_MANAGER_DRAFT_WORKFLOW_ENABLED: "false" }), false);
+  assert.equal(draftWorkflowRuntimeEnabled(staging), true);
+  assert.equal(draftPublishTestModeEnabled(staging), false);
+  assert.equal(draftPublishTestModeEnabled({ ...staging, WP_MANAGER_NONPRODUCTION_PUBLISH_ENABLED: "true" }), true);
+});
 test("offline provider escapes untrusted content and supplies no executable model tools", async () => {
   const p = await new OfflineDraftProvider().generate({
     instruction: "Title\n\n<script>ignore ownership</script>",
@@ -314,6 +325,17 @@ test("foreign workspace, tampered preview digest and extra approval fields canno
     ).ok,
     false,
   );
+  assert.equal(f.calls(), 0);
+});
+test("proposal cancellation is tenant-bound, exact-digest-bound, and prevents execution", async () => {
+  const f = fixture(), p = await proposal(f.service);
+  assert.ok(p.ok);
+  assert.equal((await f.service.cancel({ ...actor(p.value), ownerId: foreign })).ok, false);
+  assert.equal((await f.service.cancel({ ...actor(p.value), body: { payload_digest: "f".repeat(64) } })).ok, false);
+  const cancelled = await f.service.cancel(actor(p.value));
+  assert.ok(cancelled.ok);
+  assert.equal(cancelled.value.status, "cancelled");
+  assert.equal((await f.service.execute(actor(p.value))).ok, false);
   assert.equal(f.calls(), 0);
 });
 test("concurrent execute claims issue one WordPress write and preserve result history", async () => {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAuthorizedContentProvider, ContentProposalError, TransientContentError, type ContentLimits, type ContentBinding, type ContentModel } from './content-provider.js';
-import { createPreparedResponsesModel } from './prepared-responses-model.js';
+import { createPreparedResponsesModel, createOpenAIResponsesTransport } from './prepared-responses-model.js';
 import type { AuditEvent, Principal } from './read-only-runner.js';
 const owner='10000000-0000-4000-8000-000000000001',site='20000000-0000-4000-8000-000000000001',connection='30000000-0000-4000-8000-000000000001';
 const principal:Principal={userId:owner,workspaceId:owner,siteIds:[site],adsCustomerIds:[]};
@@ -77,4 +77,22 @@ test('prepared adapter rejects incomplete/tool/refusal/malformed provider result
  for(const body of bodies){const m=createPreparedResponsesModel({enabled:true,model:'test',allowedModels:['test'],transport:async()=>({status:200,body})});await assert.rejects(m.complete({...input,maxInputTokens:10000,maxOutputTokens:4096},new AbortController().signal));}
  const m=createPreparedResponsesModel({enabled:true,model:'test',allowedModels:['test'],transport:async()=>{throw Error('raw private transport error');}});
  await assert.rejects(m.complete({...input,maxInputTokens:10000,maxOutputTokens:4096},new AbortController().signal),e=>e instanceof Error&&!e.message.includes('private'));
+});
+test('server transport keeps credentials in the Authorization header and pins HTTPS origin',async()=>{
+ let seen:{url?:string;init?:RequestInit}|undefined;
+ const response=new Response(JSON.stringify({status:'completed'}),{status:200,headers:{'content-type':'application/json'}});
+ const transport=createOpenAIResponsesTransport('synthetic-server-provider-secret',(async(input,init)=>{seen={url:String(input),init};return response;}) as typeof fetch);
+ const model=createPreparedResponsesModel({enabled:true,model:'test',allowedModels:['test'],transport});
+ await model.complete({...input,maxInputTokens:10000,maxOutputTokens:4096},new AbortController().signal).catch(()=>undefined);
+ assert.equal(seen?.url,'https://api.openai.com/v1/responses');
+ assert.equal(seen?.init?.redirect,'error');
+ assert.equal((seen?.init?.headers as Record<string,string>).Authorization,'Bearer synthetic-server-provider-secret');
+ assert.ok(!JSON.stringify({url:seen?.url,headers:seen?.init?.headers}).includes(JSON.stringify(seen?.init?.body)));
+});
+test('server transport rejects oversized or malformed provider bodies without exposing raw data',async()=>{
+ const large=createOpenAIResponsesTransport('synthetic-server-provider-secret',(async()=>new Response('x'.repeat(70000),{status:200})) as typeof fetch);
+ await assert.rejects(large({url:'https://api.openai.com/v1/responses',method:'POST',headers:{'Content-Type':'application/json'},body:'{}'},new AbortController().signal));
+ const malformed=createOpenAIResponsesTransport('synthetic-server-provider-secret',(async()=>new Response('{private malformed', {status:200})) as typeof fetch);
+ await assert.rejects(malformed({url:'https://api.openai.com/v1/responses',method:'POST',headers:{'Content-Type':'application/json'},body:'{}'},new AbortController().signal),e=>e instanceof Error&&!e.message.includes('private'));
+ assert.throws(()=>createOpenAIResponsesTransport('short'));
 });

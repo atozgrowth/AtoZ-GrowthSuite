@@ -24,7 +24,7 @@ The plugin display name is now **A to Z WordPress AI Manager**. Its internal slu
 
 - Working in existing A2Z flow: pairing, inspection, inventory, offline mock assistant proposals, exact approval, isolated draft create/edit and separately gated isolated publish of an unchanged draft, readback, receipt reconciliation and audit history.
 - Added here: public WordPress Abilities discovery. Execution is visibly unavailable.
-- AI provider: the provider boundary is wired through the existing authorized content adapter to a deterministic offline mock. The default application remains offline; no production model transport, key vault, durable per-tenant spend limits or paid request is enabled.
+- AI provider at PR #28: the default application is offline. PR #29 prepares an explicit nonproduction OpenAI Responses transport, fixed server-side credential handling, and durable per-tenant cost/token/rate reservations. Its only transport verification is a synthetic HTTP fixture; there is no live provider credential or paid request.
 - Still unavailable: scheduling, media mutation, plugin/theme/core maintenance, arbitrary PHP/shell/SQL operations, theme drafting, page-builder editing and automatic execution of WordPress abilities. Isolated test publishing is not production-ready functionality.
 
 ## Remaining integration gates

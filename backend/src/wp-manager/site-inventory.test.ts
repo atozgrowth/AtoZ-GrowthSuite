@@ -62,6 +62,18 @@ test("inventory rejects unsafe URLs, malformed schemas, and oversized item lists
   assert.equal((await oversized.list({ userId: connection.user_id, accessToken: "token", connectionId: connection.id, resource: "posts" })).ok, false);
 });
 
+test("category and tag inventories remain paginated and accept only safe term metadata", async () => {
+  const term = { id: 4, name: "Local services", slug: "local-services", count: 3, parent: 0 };
+  for (const resource of ["categories", "tags"] as const) {
+    const result = await serviceWith(response(resource, { items: [term] })).list({ userId: connection.user_id, accessToken: "synthetic-token", connectionId: connection.id, resource });
+    assert.equal(result.ok, true);
+    if (result.ok) assert.deepEqual(result.value.items, [term]);
+    for (const bad of [{ ...term, count: "3" }, { ...term, internal_path: "/tmp" }, { ...term, name: "x".repeat(301) }]) {
+      assert.equal((await serviceWith(response(resource, { items: [bad] })).list({ userId: connection.user_id, accessToken: "synthetic-token", connectionId: connection.id, resource })).ok, false);
+    }
+  }
+});
+
 test("inventory routes reject unauthenticated requests and expose no mutation methods", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_ANON_KEY = "test-anon-key";
@@ -73,7 +85,7 @@ test("inventory routes reject unauthenticated requests and expose no mutation me
   });
   const getResponse = await app.inject({ method: "GET", url: `/api/wp-manager/sites/${connection.id}/posts` });
   assert.equal(getResponse.statusCode, 401);
-  for (const resource of ["posts", "pages", "media", "plugins", "themes"]) {
+  for (const resource of ["posts", "pages", "media", "plugins", "themes", "categories", "tags"]) {
     assert.equal((await app.inject({ method: "GET", url: `/api/wp-manager/sites/${connection.id}/${resource}` })).statusCode, 401);
     for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
       const result = await app.inject({ method, url: `/api/wp-manager/sites/${connection.id}/${resource}` });
@@ -117,4 +129,11 @@ test("theme grants reject scope substitution, expire, and cannot be replayed", (
   assert.equal(grants.consume({ grant: substituted, siteId: connection.site_id, siteUrl: connection.site_url, scope: "plugins" }), false);
   const expired = grants.issue(connection, { scope: "themes" }); now += 30_000;
   assert.equal(grants.consume({ grant: expired, siteId: connection.site_id, siteUrl: connection.site_url, scope: "themes" }), false);
+});
+test("taxonomy grants bind resource and page", () => {
+  const grants = new InspectionGrantStore(() => 1_000, 30_000, () => "A".repeat(43));
+  const grant = grants.issue(connection, { scope: "categories", page: 2, perPage: 20 });
+  assert.equal(grants.consume({ grant, siteId: connection.site_id, siteUrl: connection.site_url, scope: "categories", page: 2, perPage: 20 }), true);
+  const altered = grants.issue(connection, { scope: "tags", page: 1, perPage: 20 });
+  assert.equal(grants.consume({ grant: altered, siteId: connection.site_id, siteUrl: connection.site_url, scope: "categories", page: 1, perPage: 20 }), false);
 });

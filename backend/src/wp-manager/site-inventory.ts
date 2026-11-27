@@ -23,7 +23,8 @@ export type MediaInventoryItem = {
 };
 export type PluginInventoryItem = { name: string; version: string; active: boolean };
 export type ThemeInventoryItem = { name: string; version: string; active: boolean; parent: string | null; update_available: boolean | null };
-export type InventoryItem = ContentInventoryItem | MediaInventoryItem | PluginInventoryItem | ThemeInventoryItem;
+export type TaxonomyInventoryItem = { id: number; name: string; slug: string; count: number; parent: number };
+export type InventoryItem = ContentInventoryItem | MediaInventoryItem | PluginInventoryItem | ThemeInventoryItem | TaxonomyInventoryItem;
 export type InventoryResponse = {
   identity: { site_id: string; site_url: string };
   mode: "read-only";
@@ -144,6 +145,11 @@ export function sanitizeInventory(value: unknown, connection: InspectionConnecti
       if (typeof item.active !== "boolean" || (item.update_available !== null && typeof item.update_available !== "boolean")) throw new Error("invalid theme state");
       return { name: stringValue(item.name, 300), version: stringValue(item.version, 64), active: item.active,
         parent: nullableString(item.parent, 300), update_available: item.update_available } satisfies ThemeInventoryItem;
+    }
+    if (resource === "categories" || resource === "tags") {
+      exactKeys(item, ["id", "name", "slug", "count", "parent"]);
+      return { id: integerValue(item.id, 1), name: stringValue(item.name, 300), slug: stringValue(item.slug, 200),
+        count: integerValue(item.count), parent: integerValue(item.parent) } satisfies TaxonomyInventoryItem;
     }
     exactKeys(item, ["name", "version", "active"]);
     if (typeof item.active !== "boolean") throw new Error("invalid active state");
