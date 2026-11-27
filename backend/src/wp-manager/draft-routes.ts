@@ -39,7 +39,8 @@ export async function registerDraftWorkflowRoutes(
     success: true,
     enabled: service?.enabled === true,
     provider: service?.providerName ?? "offline-mock",
-    mode: "isolated-test-only",
+    mode: service?.mode ?? "unavailable",
+    capabilities: { contentGeneration: service?.enabled === true, publishing: service?.publishEnabled === true },
     publishEnabled: service?.publishEnabled === true,
   }));
   app.post("/api/wp-manager/drafts/authorize", async (req, reply) => {

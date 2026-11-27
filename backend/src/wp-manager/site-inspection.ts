@@ -82,7 +82,7 @@ type GrantRecord = {
   expiresAt: number;
 };
 
-export type ReadGrantScope = "inspection" | "posts" | "pages" | "media" | "plugins" | "themes";
+export type ReadGrantScope = "inspection" | "posts" | "pages" | "media" | "plugins" | "themes" | "categories" | "tags";
 export type ReadGrantAuthorization = { scope: ReadGrantScope; page?: number; perPage?: number };
 
 function digestGrant(grant: string) {
@@ -395,7 +395,7 @@ export class SiteInspectionService {
 function requireReadGrantScope(value: unknown): ReadGrantScope {
   if (
     value !== "inspection" && value !== "posts" && value !== "pages" &&
-    value !== "media" && value !== "plugins" && value !== "themes"
+    value !== "media" && value !== "plugins" && value !== "themes" && value !== "categories" && value !== "tags"
   ) throw new Error("invalid grant scope");
   return value;
 }

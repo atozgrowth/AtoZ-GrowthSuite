@@ -12,6 +12,8 @@ import {
 } from "./durable-grants.js";
 import { SecureWordPressDraftClient } from "./draft-site-client.js";
 import { createAgentDraftProvider } from "./content-draft-provider.js";
+import { loadContentProviderConfig } from "../agents/content-provider-config.js";
+import { SupabaseAiUsageLedger } from "../agents/ai-usage-ledger.js";
 export type DraftPayload = {
   title: string;
   content: string;
@@ -309,7 +311,17 @@ export function draftTestModeEnabled(env: NodeJS.ProcessEnv = process.env) {
   );
 }
 export function draftPublishTestModeEnabled(env: NodeJS.ProcessEnv = process.env) {
-  return draftTestModeEnabled(env) && env.WP_MANAGER_TEST_PUBLISH_ENABLED === "true";
+  return (draftTestModeEnabled(env) && env.WP_MANAGER_TEST_PUBLISH_ENABLED === "true") ||
+    ((env.APP_STAGE === "development" || env.APP_STAGE === "staging") &&
+      env.WP_MANAGER_DRAFT_WORKFLOW_ENABLED === "true" &&
+      env.WP_MANAGER_CONTROLLED_WRITES_ENABLED === "true" &&
+      env.WP_MANAGER_NONPRODUCTION_PUBLISH_ENABLED === "true");
+}
+export function draftWorkflowRuntimeEnabled(env: NodeJS.ProcessEnv = process.env) {
+  if (draftTestModeEnabled(env)) return true;
+  return (env.APP_STAGE === "development" || env.APP_STAGE === "staging") &&
+    env.WP_MANAGER_DRAFT_WORKFLOW_ENABLED === "true" &&
+    env.WP_MANAGER_CONTROLLED_WRITES_ENABLED === "true";
 }
 export class DraftWorkflowService {
   constructor(
@@ -321,6 +333,7 @@ export class DraftWorkflowService {
     public readonly enabled = false,
     public readonly publishEnabled = false,
     public readonly providerName = "offline-mock",
+    public readonly mode = "isolated-test-only",
   ) {}
   private async connection(
     ownerId: string,
@@ -494,6 +507,33 @@ export class DraftWorkflowService {
       return value
         ? { ok: true, value }
         : { ok: false, reason: "invalid_state" };
+    } catch {
+      return { ok: false, reason: "invalid_input" };
+    }
+  }
+  async cancel(i: {
+    ownerId: string;
+    accessToken: string;
+    actionId: unknown;
+    body: unknown;
+  }): Promise<DraftResult<DraftAction>> {
+    if (!this.enabled) return { ok: false, reason: "unavailable" };
+    try {
+      const b = object(i.body);
+      keys(b, ["payload_digest"]);
+      const d = digest(b.payload_digest), detail = await this.get(i);
+      if (!detail.ok) return detail;
+      if (d !== detail.value.payload_digest || !["proposed", "approved"].includes(detail.value.status))
+        return { ok: false, reason: "invalid_state" };
+      if (!(await this.connection(i.ownerId, i.accessToken, detail.value.connection_id)))
+        return { ok: false, reason: "not_found" };
+      const value = await this.store.transition({
+        ownerId: i.ownerId,
+        actionId: detail.value.id,
+        payloadDigest: d,
+        transition: "cancelled",
+      });
+      return value ? { ok: true, value } : { ok: false, reason: "invalid_state" };
     } catch {
       return { ok: false, reason: "invalid_input" };
     }
@@ -763,24 +803,33 @@ export class DraftWorkflowService {
     }
   }
 }
-export function createDraftWorkflowService() {
-  if (!draftTestModeEnabled()) return null;
-  const url = process.env.SUPABASE_URL?.trim(),
-    anon = process.env.SUPABASE_ANON_KEY?.trim(),
-    key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+export function createDraftWorkflowService(env: NodeJS.ProcessEnv = process.env) {
+  if (!draftWorkflowRuntimeEnabled(env)) return null;
+  const url = env.SUPABASE_URL?.trim(),
+    anon = env.SUPABASE_ANON_KEY?.trim(),
+    key = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !anon || !key) return null;
   const rpc = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   }) as unknown as RpcClient;
   const connections = new SupabaseInspectionConnectionStore(url, anon);
+  let providerConfig;
+  try { providerConfig = loadContentProviderConfig(env); }
+  catch { return null; }
+  const provider = createAgentDraftProvider(
+    connections,
+    providerConfig ?? undefined,
+    providerConfig ? new SupabaseAiUsageLedger(rpc) : undefined,
+  );
   return new DraftWorkflowService(
     connections,
     new SupabaseDraftWorkflowStore(rpc),
     new DurableOperationGrantStore(rpc),
     new SecureWordPressDraftClient(),
-    createAgentDraftProvider(connections),
+    provider,
     true,
-    draftPublishTestModeEnabled(),
-    "offline-mock",
+    draftPublishTestModeEnabled(env),
+    providerConfig?.provider ?? "offline-mock",
+    draftTestModeEnabled(env) ? "isolated-test-only" : "nonproduction",
   );
 }

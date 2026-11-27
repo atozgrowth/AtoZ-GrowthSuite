@@ -39,7 +39,7 @@ $count=0;
 function check($condition,$name) { global $count; if (!$condition) { fwrite(STDERR,"FAIL: $name\n"); exit(1); } $count++; }
 ATOZ_Growth_REST_API::register_routes();
 check(ATOZ_Growth_REST_API::admin_permission()===false,'site admin capability denied');
-foreach (array('inspection','posts','pages','media','plugins','themes') as $resource) {
+foreach (array('inspection','posts','pages','media','plugins','themes','categories','tags') as $resource) {
  $route=$GLOBALS['routes']['/'.$resource];
  check($route['methods']==='GET' && $route['permission_callback']!=='__return_true','sensitive routes require grants and remain read-only');
 }

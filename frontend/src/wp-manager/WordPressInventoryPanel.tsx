@@ -6,12 +6,14 @@ import type {
   WordPressMediaInventoryItem,
   WordPressPluginInventoryItem,
   WordPressThemeInventoryItem,
+  WordPressTaxonomyInventoryItem,
 } from "../types/wordpress";
 import { ApiError, getWordPressInventory } from "./api";
 import { decodeDisplayText } from "./displayText";
 
 const resources: Array<{ value: WordPressInventoryResource; label: string }> = [
   { value: "posts", label: "Posts" }, { value: "pages", label: "Pages" },
+  { value: "categories", label: "Categories" }, { value: "tags", label: "Tags" },
   { value: "media", label: "Media" }, { value: "plugins", label: "Plugins" }, { value: "themes", label: "Themes" },
 ];
 function safePublicUrl(value: string | null) {
@@ -61,7 +63,9 @@ export function WordPressInventoryPanel({ accessToken, connectionId, onSelectDra
           {resource === "media" ? (inventory.items as WordPressMediaInventoryItem[]).map((item) => {
             const url = safePublicUrl(item.public_url);
             return <article className="inventory-row" key={item.id}><div><strong>{decodeDisplayText(item.title)}</strong><small>{item.media_type || "media"} · {item.mime_type || "unknown type"}{item.width !== null && item.height !== null ? ` · ${item.width}×${item.height}` : ""}</small></div><div><span>{dateLabel(item.uploaded_at)}</span>{url && <a href={url} target="_blank" rel="noreferrer">Open media</a>}</div></article>;
-          }) : (inventory.items as WordPressContentInventoryItem[]).map((item) => {
+          }) : resource === "categories" || resource === "tags" ? (inventory.items as WordPressTaxonomyInventoryItem[]).map((item) => (
+            <article className="inventory-row" key={item.id}><div><strong>{decodeDisplayText(item.name)}</strong><small>ID {item.id} · /{decodeDisplayText(item.slug)}</small></div><div><span>{item.count} assigned items</span>{item.parent > 0 && <small>Parent ID {item.parent}</small>}</div></article>
+          )) : (inventory.items as WordPressContentInventoryItem[]).map((item) => {
             const url = safePublicUrl(item.public_url);
             return <article className="inventory-row" key={item.id}><div><strong>{decodeDisplayText(item.title)}</strong><small>ID {item.id} · {item.status} · /{item.slug || "(no slug)"}</small></div><div><span>{item.author_display_name ? decodeDisplayText(item.author_display_name) : "Author unavailable"}</span><small>Published {dateLabel(item.published_at)}</small><small>Modified {dateLabel(item.modified_at)}</small>{url && <a href={url} target="_blank" rel="noreferrer">View public item</a>}{item.status === "draft" && onSelectDraft && <button className="button secondary inventory-select-draft" type="button" onClick={() => onSelectDraft(item.id)}>Select draft for assistant</button>}</div></article>;
           })}

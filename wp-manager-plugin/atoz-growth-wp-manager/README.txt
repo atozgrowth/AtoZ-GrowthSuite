@@ -1,4 +1,4 @@
-A to Z WordPress AI Manager 0.6.0
+A to Z WordPress AI Manager 0.7.0
 
 Default behavior
 ----------------
@@ -6,7 +6,7 @@ Existing pairing, read-only inspection and metadata inventory remain available.
 Inspection includes a bounded, read-only list of abilities explicitly exposed
 through WordPress REST or public MCP metadata. It never executes an ability.
 Sites without the WordPress Abilities API report that discovery is unavailable.
-Unpublished draft operations are disabled by default. No publishing, scheduling,
+Unpublished draft operations and publishing are disabled by default. No scheduling,
 plugin maintenance, shell, PHP or SQL endpoint is provided. This package does not
 turn on production controlled writes.
 
@@ -27,16 +27,36 @@ closed and never falls back to the production API. Isolated mode also blocks all
 WordPress HTTP requests outside that exact backend API prefix, including update
 and cron-related outbound requests. Do not use this configuration on a live site.
 
+Explicit nonproduction staging configuration
+--------------------------------------------
+Staging is a separate opt-in and requires all values below in wp-config.php. Replace
+the hostname with the exact HTTPS backend under *.staging.atozgrowth.net. Production
+WordPress environment types reject these staging flags.
+
+  define('WP_ENVIRONMENT_TYPE', 'staging');
+  define('ATOZ_GROWTH_NONPRODUCTION_MODE', true);
+  define('ATOZ_GROWTH_STAGING_BACKEND_URL', 'https://api.staging.atozgrowth.net');
+  define('ATOZ_GROWTH_NONPRODUCTION_WRITES_ENABLED', true);
+  // Only after staging content and recovery have been approved:
+  define('ATOZ_GROWTH_NONPRODUCTION_PUBLISH_ENABLED', true);
+
+The backend must independently set APP_STAGE=staging,
+WP_MANAGER_DRAFT_WORKFLOW_ENABLED=true and WP_MANAGER_CONTROLLED_WRITES_ENABLED=true.
+Publishing also requires WP_MANAGER_NONPRODUCTION_PUBLISH_ENABLED=true. Both service
+and plugin independently deny these operations in production. The staging HTTP
+allowlist accepts only the configured API prefix on the staging subdomain.
+
 Draft endpoints and boundaries
 -----------------------------
 POST /wp-json/atoz-growth/v1/drafts/execute accepts only create_post_draft,
-create_page_draft or edit_draft. Backend permission must already be owner-checked,
+create_page_draft, edit_draft or separately gated publish_draft. Backend permission must already be owner-checked,
 explicitly approved, exact-payload-bound, expiring and single use. The plugin sends
 its own persistent site identity and canonical digest to the backend and requires
 literal authorization booleans and matching action ID/type/digest. A model cannot
 supply approval. Safe HTML must be unchanged by WordPress wp_kses_post; otherwise
 the request is rejected before any write. Local WordPress edit capabilities are
-independently required.
+independently required. Publishing also requires the post-type publish capability,
+an unchanged existing draft and the independent staging/test publish gate.
 
 GET /wp-json/atoz-growth/v1/drafts/<id> uses an independent post-bound one-use read
 grant. It never returns published/private/pending content through this endpoint.
