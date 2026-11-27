@@ -62,6 +62,7 @@ atoz-source-snapshot.tar.gz
 
 # Generated WordPress plugin packages
 wp-manager-plugin/**/*.zip
+/plugin-package/
 
 # OS and editor files
 .DS_Store
