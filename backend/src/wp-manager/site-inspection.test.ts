@@ -52,6 +52,10 @@ const inspection: SiteInspection = {
     pages: 5,
     media: 20,
   },
+  abilities: {
+    supported: true,
+    items: [{ name: "fixture/read-only", label: "Read-only fixture", description: "Synthetic public capability", category: "testing" }],
+  },
 };
 
 test("inspection requires an owned connected site and atomically consumes its grant", async () => {
@@ -163,4 +167,18 @@ test("inspection grants expire and remain single-use", () => {
     }),
     false,
   );
+});
+
+test("inspection rejects malformed or excessive WordPress ability metadata", async () => {
+  const connections: InspectionConnectionStore = { async findOwnedConnected() { return connection; } };
+  for (const abilities of [
+    { supported: true, items: [{ name: "fixture/unsafe name", label: "x", description: "x", category: "x" }] },
+    { supported: false, items: [{ name: "fixture/private", label: "x", description: "x", category: "x" }] },
+    { supported: true, items: Array.from({ length: 501 }, (_, index) => ({ name: `fixture/ability-${index}`, label: "x", description: "x", category: "x" })) },
+  ]) {
+    const client: WordPressSiteClient = { async inspect() { return { ...inspection, abilities }; } };
+    const service = new SiteInspectionService(connections, client, new InspectionGrantStore());
+    const result = await service.inspect({ userId: connection.user_id, accessToken: "synthetic-session", connectionId: connection.id });
+    assert.deepEqual(result, { ok: false, reason: "unavailable" });
+  }
 });

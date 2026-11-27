@@ -1,8 +1,11 @@
-A to Z Growth Suite WordPress connector 0.5.0
+A to Z WordPress AI Manager 0.5.1
 
 Default behavior
 ----------------
 Existing pairing, read-only inspection and metadata inventory remain available.
+Inspection includes a bounded, read-only list of abilities explicitly exposed
+through WordPress REST or public MCP metadata. It never executes an ability.
+Sites without the WordPress Abilities API report that discovery is unavailable.
 Unpublished draft operations are disabled by default. No publishing, scheduling,
 plugin maintenance, shell, PHP or SQL endpoint is provided. This package does not
 turn on production controlled writes.

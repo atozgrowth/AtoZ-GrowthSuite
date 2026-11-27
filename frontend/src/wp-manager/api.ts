@@ -159,7 +159,13 @@ export async function getWordPressSiteInspection(
     inspection.mode !== "read-only" ||
     typeof inspection.inspected_at !== "string" ||
     typeof inspection.site?.title !== "string" ||
-    typeof inspection.identity?.site_id !== "string"
+    typeof inspection.identity?.site_id !== "string" ||
+    typeof inspection.abilities?.supported !== "boolean" ||
+    !Array.isArray(inspection.abilities?.items) ||
+    inspection.abilities.items.some((ability) =>
+      !ability || typeof ability.name !== "string" || typeof ability.label !== "string" ||
+      typeof ability.description !== "string" || typeof ability.category !== "string"
+    )
   ) {
     throw new ApiError("The inspection service returned an unexpected response.");
   }

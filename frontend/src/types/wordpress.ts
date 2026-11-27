@@ -52,6 +52,10 @@ export interface WordPressSiteInspection {
     pages: number;
     media: number;
   };
+  abilities: {
+    supported: boolean;
+    items: Array<{ name: string; label: string; description: string; category: string }>;
+  };
 }
 
 export interface WordPressSiteInspectionResponse {
