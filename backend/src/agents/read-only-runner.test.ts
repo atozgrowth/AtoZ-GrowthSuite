@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runReadOnlyAgent, TransientReadError, type Principal, type AuditEvent, type ToolName, type ReadAdapter } from './read-only-runner.js';
+import { runReadOnlyAgent, TransientReadError, type Principal, type AuditEvent, type ReadAdapters, type ReadAdapter } from './read-only-runner.js';
 const user = '10000000-0000-4000-8000-000000000001';
 const site = '20000000-0000-4000-8000-000000000001';
 const foreign = '20000000-0000-4000-8000-000000000002';
@@ -10,7 +10,7 @@ function fixture(proposed: unknown = plan) {
   const audit: AuditEvent[] = [];
   let calls = 0;
   const read: ReadAdapter = async () => { calls++; return { sites: [{ id: site }] }; };
-  const adapters: Record<ToolName, ReadAdapter> = { 'wordpress.inventory': read, 'googleAds.campaignReport': read };
+  const adapters: ReadAdapters = { 'wordpress.inventory': read, 'googleAds.campaignReport': read };
   return { audit, calls: () => calls, input: { request: 'inspect my site', principal, provider: { interpret: async () => proposed }, adapters, audit: (event: AuditEvent) => { audit.push(event); } } };
 }
 test('offline interpretation dispatches only authorized read tools and emits redacted usage', async () => {

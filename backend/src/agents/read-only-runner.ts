@@ -7,11 +7,12 @@ export type Principal = Readonly<{
   siteIds: readonly string[];
   adsCustomerIds: readonly string[];
 }>;
-export type ToolName = 'wordpress.inventory' | 'googleAds.campaignReport';
+export type ToolName = 'wordpress.inventory' | 'googleAds.campaignReport' | 'wordpress.contentProposal';
 export type ReadPlan = Readonly<{ tool: ToolName; resourceId: string }>;
 export interface InterpretationProvider {
   interpret(untrustedRequest: string, signal: AbortSignal): Promise<unknown>;
 }
+export type ReadAdapters = Record<'wordpress.inventory' | 'googleAds.campaignReport', ReadAdapter> & Partial<Record<'wordpress.contentProposal', ReadAdapter>>;
 export type ReadAdapter = (resourceId: string, signal: AbortSignal) => Promise<unknown>;
 export class TransientReadError extends Error {}
 export type Execution = {
@@ -30,7 +31,7 @@ function parsePlan(value: unknown, principal: Principal): ReadPlan | null {
   // Read each untrusted property once, then detach before any adapter await/retry.
   const { tool, resourceId } = value as Record<string, unknown>;
   if (typeof resourceId !== 'string') return null;
-  if (tool === 'wordpress.inventory' && uuid.test(resourceId) && principal.siteIds.includes(resourceId)) return Object.freeze({ tool, resourceId });
+  if ((tool === 'wordpress.inventory' || tool === 'wordpress.contentProposal') && uuid.test(resourceId) && principal.siteIds.includes(resourceId)) return Object.freeze({ tool, resourceId });
   if (tool === 'googleAds.campaignReport' && /^\d{10}$/.test(resourceId) && principal.adsCustomerIds.includes(resourceId)) return Object.freeze({ tool, resourceId });
   return null;
 }
@@ -39,7 +40,7 @@ export async function runReadOnlyAgent(input: {
   request: string;
   principal: Principal;
   provider: InterpretationProvider;
-  adapters: Record<ToolName, ReadAdapter>;
+  adapters: ReadAdapters;
   audit: (event: Readonly<AuditEvent>) => void;
   timeoutMs?: number;
 }): Promise<Execution> {
@@ -70,12 +71,14 @@ export async function runReadOnlyAgent(input: {
     if (controller.signal.aborted) return timedOut;
     const plan = parsePlan(proposed, principal);
     if (!plan) return 'denied' as const;
+    const adapter = input.adapters[plan.tool];
+    if (!adapter) return 'denied' as const;
     tool = plan.tool;
     for (let count = 0; count < 2; count++) {
       if (controller.signal.aborted) return timedOut;
       attempts++;
       try {
-        const result = await input.adapters[plan.tool](plan.resourceId, controller.signal);
+        const result = await adapter(plan.resourceId, controller.signal);
         if (controller.signal.aborted) return timedOut;
         // Bound detached JSON output; adapters must already sanitize provider fields.
         const encoded = JSON.stringify(result);
