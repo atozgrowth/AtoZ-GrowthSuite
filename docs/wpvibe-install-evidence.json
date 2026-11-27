@@ -1,0 +1,33 @@
+{
+  "source": {
+    "repository": "https://github.com/awesomemotive/wpvibe-ai-mcp",
+    "commit": "5187f684e8e1812a7a4ecaa48585ee17be8a66d5",
+    "commit_date": "2026-11-22",
+    "plugin_version": "1.24.3",
+    "license_header": "GPL-2.0-or-later",
+    "license_file": "GNU GPL version 2",
+    "wordpress_minimum": "6.0",
+    "php_minimum": "7.4",
+    "vendored_dependency": "svg-sanitize 1.0.0 (GPL-2.0-or-later)"
+  },
+  "isolated_install": {
+    "wordpress_image": "wordpress:7.1.4-php8.3-apache@sha256:074f9ef5429025dab76a4242f5b796f64ae76a49dd19b6708ad29e1893a8d383",
+    "database_image": "mariadb:11.4@sha256:a8992b5e5404d11e03c54a31d0c1bdea3fd116d283aa6d1a627551f29045309b",
+    "wp_cli_image": "wordpress:cli-2.12.0-php8.3@sha256:fc50189ac8d3256891d0d964f8d80cf62189eb6262f53c7fd8bfc40debd71029",
+    "plugin_activated": true,
+    "routes_registered": 63,
+    "anonymous_http_status": {
+      "site_info": 401,
+      "file_list": 401,
+      "content_edit_with_validated_parameters": 401,
+      "cli_run_with_validated_parameters": 401,
+      "abilities": 401
+    },
+    "internal_network_only": true,
+    "published_host_ports": 0,
+    "external_http_blocked": true,
+    "hosted_gateway_contacted": false,
+    "synthetic_credentials_and_content_only": true,
+    "actual_authenticated_wpvibe_operations_verified": false
+  }
+}

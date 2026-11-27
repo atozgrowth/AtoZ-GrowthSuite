@@ -537,6 +537,20 @@ export function WordPressManagerPage() {
                 <div><dt>Network-active plugins</dt><dd>{inspection.plugins.network_active}</dd></div>
                 <div><dt>Inspected</dt><dd>{new Date(inspection.inspected_at).toLocaleString()}</dd></div>
               </dl>
+              <section className="wp-abilities" aria-labelledby="wp-abilities-title">
+                <h3 id="wp-abilities-title">WordPress abilities</h3>
+                <p>{inspection.abilities.supported
+                  ? `Discovered ${inspection.abilities.items.length} public WordPress ${inspection.abilities.items.length === 1 ? "ability" : "abilities"}. Discovery only; ability execution is unavailable.`
+                  : "This WordPress version does not provide the Abilities API."}</p>
+                {inspection.abilities.items.length > 0 && <ul>
+                  {inspection.abilities.items.slice(0, 50).map((ability) => <li key={ability.name}>
+                    <strong>{decodeDisplayText(ability.label)}</strong> <code>{ability.name}</code>
+                    {ability.description && <span>{decodeDisplayText(ability.description)}</span>}
+                    <small>{decodeDisplayText(ability.category)}</small>
+                  </li>)}
+                </ul>}
+                {inspection.abilities.items.length > 50 && <small>Showing 50 of {inspection.abilities.items.length} discovered abilities.</small>}
+              </section>
               <div className="readonly-banner compact">
                 <Icon name="shield" size={18} />
                 <div>

@@ -8,6 +8,14 @@
 
 .inventory-tabs { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
 .inventory-list { display: grid; gap: 0.65rem; }
+.wp-abilities { margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcff; }
+.wp-abilities h3 { margin: 0; font-size: 16px; }
+.wp-abilities > p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.wp-abilities ul { display: grid; gap: 10px; padding: 0; margin: 14px 0 0; list-style: none; }
+.wp-abilities li { display: grid; grid-template-columns: 1fr; gap: 4px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: white; }
+.wp-abilities code { width: fit-content; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.wp-abilities li span { font-size: 13px; line-height: 1.45; }
+.wp-abilities li small { color: var(--muted); font-size: 11px; }
 .inventory-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 12px; }
 .inventory-row > div { display: grid; gap: 0.25rem; }
 .inventory-row > div:last-child { text-align: right; }

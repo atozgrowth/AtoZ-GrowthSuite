@@ -76,7 +76,7 @@ class ATOZ_Growth_REST_API {
         return rest_ensure_response(
             array(
                 'success' => true,
-                'service' => 'A to Z Growth WP Manager',
+                'service' => 'A to Z WordPress AI Manager',
                 'version' => ATOZ_GROWTH_WP_MANAGER_VERSION,
                 'mode'    => ATOZ_Growth_Endpoints::writes_enabled() ? 'isolated-drafts' : 'read-only',
                 'publishing_enabled' => false,
@@ -246,8 +246,47 @@ class ATOZ_Growth_REST_API {
                     'pages' => self::content_count( 'page' ),
                     'media' => self::content_count( 'attachment' ),
                 ),
+                'abilities'   => self::public_abilities(),
             )
         );
+    }
+
+    /** Discover publicly exposed WordPress abilities without executing them. */
+    private static function public_abilities() {
+        if ( ! function_exists( 'wp_get_abilities' ) ) {
+            return array( 'supported' => false, 'items' => array() );
+        }
+        $registered = wp_get_abilities();
+        if ( ! is_array( $registered ) ) {
+            return array( 'supported' => true, 'items' => array() );
+        }
+        ksort( $registered, SORT_STRING );
+        $items = array();
+        foreach ( $registered as $ability ) {
+            if ( ! is_object( $ability ) || ! method_exists( $ability, 'get_meta' ) ||
+                ! method_exists( $ability, 'get_name' ) || ! method_exists( $ability, 'get_label' ) ||
+                ! method_exists( $ability, 'get_description' ) || ! method_exists( $ability, 'get_category' ) ) {
+                continue;
+            }
+            $meta = $ability->get_meta();
+            if ( ! is_array( $meta ) ) { continue; }
+            $mcp = $meta['mcp'] ?? array();
+            $mcp_public = is_array( $mcp ) && array_key_exists( 'public', $mcp )
+                ? true === $mcp['public']
+                : true === ( $meta['public'] ?? false );
+            if ( true !== ( $meta['show_in_rest'] ?? false ) && ! $mcp_public ) { continue; }
+            $name = (string) $ability->get_name();
+            if ( ! preg_match( '/^[a-z0-9][a-z0-9\/-]*$/', $name ) || count( $items ) >= 500 ) {
+                continue;
+            }
+            $items[] = array(
+                'name'        => $name,
+                'label'       => sanitize_text_field( (string) $ability->get_label() ),
+                'description' => sanitize_textarea_field( (string) $ability->get_description() ),
+                'category'    => sanitize_text_field( (string) $ability->get_category() ),
+            );
+        }
+        return array( 'supported' => true, 'items' => $items );
     }
 
     /**

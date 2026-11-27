@@ -50,6 +50,10 @@ export type SiteInspection = {
     pages: number;
     media: number;
   };
+  abilities: {
+    supported: boolean;
+    items: Array<{ name: string; label: string; description: string; category: string }>;
+  };
 };
 
 export type InspectionResult =
@@ -128,6 +132,7 @@ function sanitizeInspection(
   const theme = objectValue(root.theme);
   const plugins = objectValue(root.plugins);
   const content = objectValue(root.content);
+  const abilities = objectValue(root.abilities);
 
   const siteId = requireUuid(identity.site_id);
   const siteUrl = normalizeSiteUrl(identity.site_url);
@@ -146,6 +151,23 @@ function sanitizeInspection(
   if (parent !== null && typeof parent !== "string") {
     throw new Error("invalid theme parent");
   }
+  if (typeof abilities.supported !== "boolean" || !Array.isArray(abilities.items) || abilities.items.length > 500) {
+    throw new Error("invalid abilities inventory");
+  }
+  const abilityNames = new Set<string>();
+  const abilityItems = abilities.items.map((raw) => {
+    const ability = objectValue(raw);
+    const name = requireString(ability.name, 200);
+    if (!/^[a-z0-9][a-z0-9/_-]*$/.test(name) || abilityNames.has(name)) throw new Error("invalid ability name");
+    abilityNames.add(name);
+    return {
+      name,
+      label: requireString(ability.label, 300),
+      description: requireString(ability.description, 1_000),
+      category: requireString(ability.category, 200),
+    };
+  });
+  if (abilities.supported === false && abilityItems.length !== 0) throw new Error("unsupported abilities reported");
 
   return {
     identity: { site_id: siteId, site_url: siteUrl },
@@ -179,6 +201,7 @@ function sanitizeInspection(
       pages: requireCount(content.pages),
       media: requireCount(content.media),
     },
+    abilities: { supported: abilities.supported, items: abilityItems },
   };
 }
 
