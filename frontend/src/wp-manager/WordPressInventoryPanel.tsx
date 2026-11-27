@@ -25,7 +25,7 @@ function dateLabel(value: string | null) {
   return Number.isFinite(date.getTime()) ? date.toLocaleString() : "Not available";
 }
 
-export function WordPressInventoryPanel({ accessToken, connectionId }: { accessToken: string; connectionId: string }) {
+export function WordPressInventoryPanel({ accessToken, connectionId, onSelectDraft }: { accessToken: string; connectionId: string; onSelectDraft?: (id: number) => void }) {
   const [resource, setResource] = useState<WordPressInventoryResource>("posts");
   const [page, setPage] = useState(1);
   const [inventory, setInventory] = useState<WordPressInventory | null>(null);
@@ -63,7 +63,7 @@ export function WordPressInventoryPanel({ accessToken, connectionId }: { accessT
             return <article className="inventory-row" key={item.id}><div><strong>{decodeDisplayText(item.title)}</strong><small>{item.media_type || "media"} · {item.mime_type || "unknown type"}{item.width !== null && item.height !== null ? ` · ${item.width}×${item.height}` : ""}</small></div><div><span>{dateLabel(item.uploaded_at)}</span>{url && <a href={url} target="_blank" rel="noreferrer">Open media</a>}</div></article>;
           }) : (inventory.items as WordPressContentInventoryItem[]).map((item) => {
             const url = safePublicUrl(item.public_url);
-            return <article className="inventory-row" key={item.id}><div><strong>{decodeDisplayText(item.title)}</strong><small>{item.status} · /{item.slug || "(no slug)"}</small></div><div><span>{item.author_display_name ? decodeDisplayText(item.author_display_name) : "Author unavailable"}</span><small>Published {dateLabel(item.published_at)}</small><small>Modified {dateLabel(item.modified_at)}</small>{url && <a href={url} target="_blank" rel="noreferrer">View public item</a>}</div></article>;
+            return <article className="inventory-row" key={item.id}><div><strong>{decodeDisplayText(item.title)}</strong><small>ID {item.id} · {item.status} · /{item.slug || "(no slug)"}</small></div><div><span>{item.author_display_name ? decodeDisplayText(item.author_display_name) : "Author unavailable"}</span><small>Published {dateLabel(item.published_at)}</small><small>Modified {dateLabel(item.modified_at)}</small>{url && <a href={url} target="_blank" rel="noreferrer">View public item</a>}{item.status === "draft" && onSelectDraft && <button className="button secondary inventory-select-draft" type="button" onClick={() => onSelectDraft(item.id)}>Select draft for assistant</button>}</div></article>;
           })}
         </div>
       )}

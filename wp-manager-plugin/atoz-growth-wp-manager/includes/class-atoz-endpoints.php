@@ -24,6 +24,10 @@ class ATOZ_Growth_Endpoints {
     public static function writes_enabled() {
         return self::isolated_mode() && defined( 'ATOZ_GROWTH_TEST_WRITES_ENABLED' ) && true === ATOZ_GROWTH_TEST_WRITES_ENABLED && ! is_wp_error( self::endpoint( 'drafts/authorize' ) );
     }
+    /** Publishing is impossible unless the disposable local fixture explicitly opts in. */
+    public static function publishing_enabled() {
+        return self::writes_enabled() && defined( 'ATOZ_GROWTH_TEST_PUBLISH_ENABLED' ) && true === ATOZ_GROWTH_TEST_PUBLISH_ENABLED;
+    }
     /** Test-mode allowlist blocks WordPress background requests as well as connector requests. */
     public static function block_external_test_http( $preempt, $args, $url ) {
         if ( ! self::isolated_mode() ) { return $preempt; }

@@ -15,6 +15,9 @@ class ATOZ_Growth_Drafts {
         register_rest_route( ATOZ_Growth_REST_API::NAMESPACE, '/drafts/(?P<id>[1-9][0-9]*)', array(
             'methods' => 'GET', 'callback' => array( __CLASS__, 'get_draft' ), 'permission_callback' => array( __CLASS__, 'authorize_read' ),
         ) );
+        register_rest_route( ATOZ_Growth_REST_API::NAMESPACE, '/published/(?P<id>[1-9][0-9]*)', array(
+            'methods' => 'GET', 'callback' => array( __CLASS__, 'get_published' ), 'permission_callback' => array( __CLASS__, 'authorize_published_read' ),
+        ) );
     }
     private static function uuid( $value ) {
         return is_string( $value ) && preg_match( '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $value );
@@ -38,8 +41,8 @@ class ATOZ_Growth_Drafts {
         if ( ! is_array( $body ) || count( $body ) !== 5 || ! isset( $body['grant'], $body['action_id'], $body['action_type'], $body['payload_digest'], $body['payload'] ) ||
             ! is_string( $body['grant'] ) || ! preg_match( '/^[A-Za-z0-9_-]{43}$/', $body['grant'] ) || ! self::uuid( $body['action_id'] ) ||
             ! is_string( $body['payload_digest'] ) || ! preg_match( '/^[a-f0-9]{64}$/', $body['payload_digest'] ) ||
-            ! in_array( $body['action_type'], array( 'create_post_draft', 'create_page_draft', 'edit_draft' ), true ) || ! is_array( $body['payload'] ) ) { return false; }
-        $p = $body['payload']; $edit = 'edit_draft' === $body['action_type'];
+            ! in_array( $body['action_type'], array( 'create_post_draft', 'create_page_draft', 'edit_draft', 'publish_draft' ), true ) || ! is_array( $body['payload'] ) ) { return false; }
+        $p = $body['payload']; $edit = in_array( $body['action_type'], array( 'edit_draft', 'publish_draft' ), true );
         if ( count( $p ) !== ( $edit ? 6 : 2 ) || ! isset( $p['title'], $p['content'] ) || ! is_string( $p['title'] ) || ! is_string( $p['content'] ) ||
             '' === trim( $p['title'] ) || strlen( $p['title'] ) > 800 || strlen( $p['content'] ) > 100000 ||
             sanitize_text_field( $p['title'] ) !== $p['title'] || wp_kses_post( $p['content'] ) !== $p['content'] ) { return false; }
@@ -51,6 +54,7 @@ class ATOZ_Growth_Drafts {
                 ! is_string( $p['expected_content_digest'] ) || ! preg_match( '/^[a-f0-9]{64}$/', $p['expected_content_digest'] ) ) { return false; }
             $payload['post_id'] = $p['post_id']; $payload['post_type'] = $p['post_type'];
             $payload['expected_modified_gmt'] = $p['expected_modified_gmt']; $payload['expected_content_digest'] = $p['expected_content_digest'];
+            if ( 'publish_draft' === $body['action_type'] && ! hash_equals( $payload['expected_content_digest'], self::content_digest( $payload['title'], $payload['content'] ) ) ) { return false; }
         }
         if ( ! hash_equals( $body['payload_digest'], self::digest( $payload ) ) ) { return false; }
         return array( 'grant' => $body['grant'], 'action_id' => $body['action_id'], 'action_type' => $body['action_type'], 'payload_digest' => $body['payload_digest'], 'payload' => $payload );
@@ -75,7 +79,7 @@ class ATOZ_Growth_Drafts {
     }
     public static function authorize_execute( $request ) {
         $actor = self::actor(); $data = self::request_data( $request );
-        if ( ! $actor || ! $data || ! self::transactional_tables() ) { return self::error( 'atoz_draft_disabled_or_invalid' ); }
+        if ( ! $actor || ! $data || ! self::transactional_tables() || ( 'publish_draft' === $data['action_type'] && ! ATOZ_Growth_Endpoints::publishing_enabled() ) ) { return self::error( 'atoz_draft_disabled_or_invalid' ); }
         $approved = self::callback( array( 'grant' => $data['grant'], 'action_id' => $data['action_id'], 'action_type' => $data['action_type'], 'payload_digest' => $data['payload_digest'],
             'site_id' => ATOZ_Growth_Site_Identity::get_site_id(), 'site_url' => untrailingslashit( home_url( '/' ) ) ) );
         if ( is_wp_error( $approved ) ) { return $approved; }
@@ -83,14 +87,15 @@ class ATOZ_Growth_Drafts {
             if ( ! isset( $approved[ $key ] ) || ! is_string( $approved[ $key ] ) || ! hash_equals( $data[ $key ], $approved[ $key ] ) ) { return self::error( 'atoz_draft_binding_mismatch' ); }
         }
         $type = 'create_page_draft' === $data['action_type'] ? 'page' : 'post';
-        if ( 'edit_draft' === $data['action_type'] ) {
+        if ( in_array( $data['action_type'], array( 'edit_draft', 'publish_draft' ), true ) ) {
             $post = get_post( $data['payload']['post_id'] );
             if ( ! $post || 'draft' !== $post->post_status || $post->post_type !== $data['payload']['post_type'] || ! user_can( $actor, 'edit_post', $post->ID ) ) { return self::error( 'atoz_draft_capability_denied' ); }
+            if ( 'publish_draft' === $data['action_type'] && ( ! ATOZ_Growth_Endpoints::publishing_enabled() || ! user_can( $actor, 'page' === $post->post_type ? 'publish_pages' : 'publish_posts' ) ) ) { return self::error( 'atoz_publish_capability_denied' ); }
         } elseif ( ! user_can( $actor, 'page' === $type ? 'edit_pages' : 'edit_posts' ) ) { return self::error( 'atoz_draft_capability_denied' ); }
         return true;
     }
     private static function draft_record( $post ) {
-        return array( 'id' => (int) $post->ID, 'type' => $post->post_type, 'status' => 'draft', 'title' => $post->post_title, 'content' => $post->post_content,
+        return array( 'id' => (int) $post->ID, 'type' => $post->post_type, 'status' => $post->post_status, 'title' => $post->post_title, 'content' => $post->post_content,
             'modified_gmt' => $post->post_modified_gmt, 'content_digest' => self::content_digest( $post->post_title, $post->post_content ) );
     }
     private static function response( $draft ) {
@@ -119,20 +124,23 @@ class ATOZ_Growth_Drafts {
         try {
             if ( false === $wpdb->query( 'START TRANSACTION' ) ) { throw new Exception( 'transaction_unavailable' ); }
             $transaction = true;
-            if ( 'edit_draft' === $data['action_type'] ) {
+        if ( in_array( $data['action_type'], array( 'edit_draft', 'publish_draft' ), true ) ) {
                 $post_id = $p['post_id']; $lock = 'atoz_draft_edit_lock_' . $post_id;
                 if ( ! self::claim_option( $lock, $data['action_id'] ) ) { $lock = null; throw new Exception( 'edit_locked' ); }
                 clean_post_cache( $post_id );
                 $row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->posts} WHERE ID=%d FOR UPDATE", $post_id ) ); $existing = $row ? get_post( $row ) : null;
                 if ( ! $existing || 'draft' !== $existing->post_status || $existing->post_type !== $p['post_type'] || ! user_can( $actor, 'edit_post', $post_id ) ||
                     $existing->post_modified_gmt !== $p['expected_modified_gmt'] || ! hash_equals( $p['expected_content_digest'], self::content_digest( $existing->post_title, $existing->post_content ) ) ) { throw new Exception( 'stale_or_forbidden' ); }
-                $result = wp_update_post( wp_slash( array( 'ID' => $post_id, 'post_title' => $p['title'], 'post_content' => $p['content'], 'post_status' => 'draft' ) ), true );
+                $target_status = 'publish_draft' === $data['action_type'] ? 'publish' : 'draft';
+                if ( 'publish_draft' === $data['action_type'] && ( ! ATOZ_Growth_Endpoints::publishing_enabled() || ! user_can( $actor, $existing->post_type === 'page' ? 'publish_pages' : 'publish_posts' ) || ! hash_equals( $p['expected_content_digest'], self::content_digest( $existing->post_title, $existing->post_content ) ) ) ) { throw new Exception( 'publish_capability_or_payload_changed' ); }
+                $result = wp_update_post( wp_slash( array( 'ID' => $post_id, 'post_title' => $p['title'], 'post_content' => $p['content'], 'post_status' => $target_status ) ), true );
             } else {
                 $result = wp_insert_post( wp_slash( array( 'post_type' => 'create_page_draft' === $data['action_type'] ? 'page' : 'post', 'post_status' => 'draft', 'post_title' => $p['title'], 'post_content' => $p['content'], 'post_author' => (int) $actor->ID ) ), true );
             }
             if ( is_wp_error( $result ) || ! is_int( $result ) || $result < 1 ) { throw new Exception( 'write_failed' ); }
             $post_id = $result; clean_post_cache( $post_id ); $post = get_post( $post_id );
-            if ( ! $post || 'draft' !== $post->post_status || ! hash_equals( self::content_digest( $p['title'], $p['content'] ), self::content_digest( $post->post_title, $post->post_content ) ) ) { throw new Exception( 'readback_failed' ); }
+            $expected_status = 'publish_draft' === $data['action_type'] ? 'publish' : 'draft';
+            if ( ! $post || $expected_status !== $post->post_status || ! hash_equals( self::content_digest( $p['title'], $p['content'] ), self::content_digest( $post->post_title, $post->post_content ) ) ) { throw new Exception( 'readback_failed' ); }
             $draft = self::draft_record( $post );
             if ( ! update_option( $key, array( 'status' => 'succeeded', 'digest' => $data['payload_digest'], 'action_type' => $data['action_type'], 'connection_id' => get_option( ATOZ_Growth_Pairing::OPTION_CONNECTION_ID ), 'post_id' => $post_id ), false ) ) { throw new Exception( 'receipt_failed' ); }
             if ( false === $wpdb->query( 'COMMIT' ) ) { throw new Exception( 'commit_uncertain' ); }
@@ -160,19 +168,20 @@ class ATOZ_Growth_Drafts {
         $action = $request->get_param( 'action_id' );
         $type = $request->get_header( 'X-AtoZ-Action-Type' ); $digest = $request->get_header( 'X-AtoZ-Payload-Digest' );
         $grant = $request->get_header( 'X-AtoZ-Inspection-Grant' );
-        if ( ! self::uuid( $action ) || ! in_array( $type, array( 'create_post_draft', 'create_page_draft', 'edit_draft' ), true ) ||
+        if ( ! self::uuid( $action ) || ! in_array( $type, array( 'create_post_draft', 'create_page_draft', 'edit_draft', 'publish_draft' ), true ) ||
              ! is_string( $digest ) || ! preg_match( '/^[a-f0-9]{64}$/', $digest ) || ! is_string( $grant ) || ! preg_match( '/^[A-Za-z0-9_-]{43}$/', $grant ) ) { return false; }
         return array( 'action_id' => $action, 'action_type' => $type, 'payload_digest' => $digest, 'grant' => $grant );
     }
     private static function verified_receipt_post( $data ) {
         $receipt = get_option( 'atoz_draft_action_' . str_replace( '-', '', $data['action_id'] ) );
         $connection = get_option( ATOZ_Growth_Pairing::OPTION_CONNECTION_ID );
+        $expected_status = 'publish_draft' === $data['action_type'] ? 'publish' : 'draft';
         if ( ! is_array( $receipt ) || ! isset( $receipt['status'], $receipt['post_id'], $receipt['digest'], $receipt['action_type'], $receipt['connection_id'] ) ||
              'succeeded' !== $receipt['status'] || ! is_int( $receipt['post_id'] ) || $receipt['post_id'] < 1 ||
              ! is_string( $receipt['digest'] ) || ! hash_equals( $data['payload_digest'], $receipt['digest'] ) ||
              $data['action_type'] !== $receipt['action_type'] || ! is_string( $connection ) || $connection !== $receipt['connection_id'] ) { return false; }
         $post = get_post( $receipt['post_id'] ); $actor = self::actor();
-        if ( ! $actor || ! $post || 'draft' !== $post->post_status || ! in_array( $post->post_type, array( 'post', 'page' ), true ) || ! user_can( $actor, 'edit_post', $post->ID ) ) { return false; }
+        if ( ! $actor || ! $post || $expected_status !== $post->post_status || ! in_array( $post->post_type, array( 'post', 'page' ), true ) || ! user_can( $actor, 'edit_post', $post->ID ) || ( 'publish' === $expected_status && ( ! ATOZ_Growth_Endpoints::publishing_enabled() || ! user_can( $actor, $post->post_type === 'page' ? 'publish_pages' : 'publish_posts' ) ) ) ) { return false; }
         return $post;
     }
     public static function authorize_receipt( $request ) {
@@ -187,6 +196,23 @@ class ATOZ_Growth_Drafts {
             if ( ! isset( $approved[ $key ] ) || ! is_string( $approved[ $key ] ) || ! hash_equals( $data[ $key ], $approved[ $key ] ) ) { return self::error( 'atoz_receipt_not_available', 409 ); }
         }
         return self::verified_receipt_post( $data ) ? true : self::error( 'atoz_receipt_not_available', 409 );
+    }
+    public static function authorize_published_read( $request ) {
+        $id = (int) $request->get_param( 'id' );
+        $grant = trim( (string) $request->get_header( 'X-AtoZ-Inspection-Grant' ) );
+        $action_id = (string) $request->get_header( 'X-AtoZ-Action-Id' );
+        $digest = (string) $request->get_header( 'X-AtoZ-Payload-Digest' );
+        $actor = self::actor();
+        if ( ! $actor || ! ATOZ_Growth_Endpoints::publishing_enabled() || $id < 1 || ! preg_match( '/^[A-Za-z0-9_-]{43}$/', $grant ) || ! self::uuid( $action_id ) || ! preg_match( '/^[a-f0-9]{64}$/', $digest ) || 'publish_draft' !== $request->get_header( 'X-AtoZ-Action-Type' ) ) { return self::error( 'atoz_published_read_not_authorized' ); }
+        $approved = self::callback( array( 'grant' => $grant, 'scope' => 'published_read', 'site_id' => ATOZ_Growth_Site_Identity::get_site_id(), 'site_url' => untrailingslashit( home_url( '/' ) ), 'post_id' => $id, 'action_id' => $action_id, 'action_type' => 'publish_draft', 'payload_digest' => $digest ) );
+        if ( is_wp_error( $approved ) || ! isset( $approved['post_id'], $approved['action_id'], $approved['action_type'], $approved['payload_digest'] ) || $approved['post_id'] !== $id || ! hash_equals( $action_id, (string) $approved['action_id'] ) || ! hash_equals( $digest, (string) $approved['payload_digest'] ) ) { return self::error( 'atoz_published_read_not_authorized' ); }
+        $post = get_post( $id );
+        return $post && 'publish' === $post->post_status && user_can( $actor, 'edit_post', $id ) && user_can( $actor, $post->post_type === 'page' ? 'publish_pages' : 'publish_posts' ) ? true : self::error( 'atoz_published_read_not_available' );
+    }
+    public static function get_published( $request ) {
+        $post = get_post( (int) $request->get_param( 'id' ) );
+        if ( ! $post || 'publish' !== $post->post_status ) { return self::error( 'atoz_published_read_not_available', 404 ); }
+        return rest_ensure_response( self::response( self::draft_record( $post ) ) );
     }
     public static function get_receipt( $request ) {
         $data = self::receipt_request( $request ); $post = $data ? self::verified_receipt_post( $data ) : false;

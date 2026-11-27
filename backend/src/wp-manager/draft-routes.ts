@@ -38,8 +38,9 @@ export async function registerDraftWorkflowRoutes(
   app.get("/api/wp-manager/drafts/status", { preHandler: auth }, async () => ({
     success: true,
     enabled: service?.enabled === true,
-    provider: "offline",
+    provider: service?.providerName ?? "offline-mock",
     mode: "isolated-test-only",
+    publishEnabled: service?.publishEnabled === true,
   }));
   app.post("/api/wp-manager/drafts/authorize", async (req, reply) => {
     if (!service)
@@ -58,6 +59,20 @@ export async function registerDraftWorkflowRoutes(
         connectionId: (req.params as { connectionId: string }).connectionId,
       });
       return r.ok ? { success: true, actions: r.value } : failure(reply, r);
+    },
+  );
+  app.post(
+    "/api/wp-manager/sites/:connectionId/drafts/publish-proposals",
+    { preHandler: auth },
+    async (req: AuthenticatedRequest, reply) => {
+      if (!service) return reply.code(503).send({ success: false });
+      const r = await service.proposePublish({
+        ownerId: req.user!.id,
+        accessToken: req.accessToken!,
+        connectionId: (req.params as { connectionId: string }).connectionId,
+        body: req.body,
+      });
+      return r.ok ? reply.code(201).send({ success: true, action: r.value }) : failure(reply, r);
     },
   );
   app.post(

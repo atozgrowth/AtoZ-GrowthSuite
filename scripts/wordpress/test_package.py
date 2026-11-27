@@ -7,7 +7,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
             one=build(Path(first)); two=build(Path(second))
             self.assertEqual(one['sha256'],two['sha256'])
-            self.assertEqual(verify(Path(first))['version'],'0.5.1')
+            self.assertEqual(verify(Path(first))['version'],'0.6.0')
             self.assertIn('atoz-growth-wp-manager/atoz-growth-wp-manager.php',one['files'])
             import zipfile
             with zipfile.ZipFile(Path(first)/one['archive']) as package:
