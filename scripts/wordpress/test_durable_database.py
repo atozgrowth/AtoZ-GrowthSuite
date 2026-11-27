@@ -80,6 +80,14 @@ try:
  payload={'title':'Synthetic title','content':'<p>Safe synthetic content</p>'}
  encoded=json.dumps(payload,separators=(',',':'));ph=H(encoded)
  action=json.loads(query(f"select public.wp_manager_create_draft_workflow('{USER}','{CONNECTION}','create_post_draft','{encoded}'::jsonb,decode('{ph}','hex'));"));aid=action['id']
+ restore_payload={'title':'Restored synthetic title','content':'<p>Restored</p>','post_id':12,'post_type':'post','expected_modified_gmt':'2026-01-01 00:00:00','expected_content_digest':H('current'),'revision_id':13,'expected_revision_digest':H('revision')}
+ restore_encoded=json.dumps(restore_payload,separators=(',',':'));restore_digest=H(restore_encoded)
+ restore_action=json.loads(query(f"select public.wp_manager_create_draft_workflow('{USER}','{CONNECTION}','restore_revision','{restore_encoded}'::jsonb,decode('{restore_digest}','hex'));"))
+ assert restore_action['action_type']=='restore_revision'
+ assert json.loads(query(f"select public.wp_manager_transition_draft_workflow('{USER}','{restore_action['id']}',decode('{restore_digest}','hex'),'approved');"))['status']=='approved'
+ assert json.loads(query(f"select public.wp_manager_transition_draft_workflow('{USER}','{restore_action['id']}',decode('{restore_digest}','hex'),'executing');"))['status']=='executing'
+ restore_grant=issue('restore-execute','draft_execute',f",null,null,null,'{restore_action['id']}',decode('{restore_digest}','hex')")
+ assert query(consume(restore_grant,'draft_execute',f",null,null,null,'{restore_action['id']}',decode('{restore_digest}','hex'),'restore_revision'"))=='t'
  assert query(f"select public.wp_manager_get_draft_workflow('{OTHER}','{aid}');")==''
  transition=lambda state,digest=ph:f"select public.wp_manager_transition_draft_workflow('{USER}','{aid}',decode('{digest}','hex'),'{state}');"
  assert query(transition('executing'))==''
@@ -107,7 +115,7 @@ try:
  for fn in ['wp_manager_issue_operation_grant','wp_manager_consume_operation_grant','wp_manager_revoke_operation_grant','wp_manager_create_draft_workflow','wp_manager_get_draft_workflow','wp_manager_list_draft_workflows','wp_manager_transition_draft_workflow','wp_manager_reserve_ai_usage','wp_manager_settle_ai_usage']:
   assert query(f"select bool_and(not has_function_privilege('anon',oid,'EXECUTE') and not has_function_privilege('authenticated',oid,'EXECUTE') and has_function_privilege('service_role',oid,'EXECUTE') and prosecdef and 'search_path=pg_catalog'=any(proconfig)) from pg_proc where proname='{fn}';")=='t'
  # Reapplying the new review proposal must preserve completed history and receipts.
- query((ROOT/'backend/supabase/migrations/20261114130148_durable_wordpress_grants_and_draft_workflows.sql').read_text())
+ query((ROOT/'backend/supabase/migrations/20261128100000_add_wp_taxonomy_media_and_revisions.sql').read_text())
  assert json.loads(query(f"select public.wp_manager_get_draft_workflow('{USER}','{aid}');"))['status']=='succeeded'
  print(json.dumps({'postgres_version':17,'migrations':len(migrations),'durable_single_use':True,'concurrent_consumption_and_claim':True,'action_type_tamper_denied':True,'owner_revocation_expiry_and_replay':True,'proposal_cancellation_audit':True,'private_rls_and_service_rpc':True,'durable_ai_reservations_and_tenant_quotas':True,'concurrent_spend_serialization':True,'per_tenant_rate_limit':True,'persistent_audit':True,'live_database_access':False},indent=2))
 finally:

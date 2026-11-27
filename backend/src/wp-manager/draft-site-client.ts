@@ -120,4 +120,12 @@ export class SecureWordPressDraftClient implements WordPressDraftClient {
       "X-AtoZ-Payload-Digest": action.payload_digest,
     });
   }
+  revisions(siteUrl: string, postId: number, grant: string) {
+    if (!Number.isSafeInteger(postId) || postId <= 0) throw Error("Invalid draft id");
+    return json(siteUrl, "drafts/" + postId + "/revisions", "GET", grant);
+  }
+  revision(siteUrl: string, postId: number, revisionId: number, grant: string) {
+    if (!Number.isSafeInteger(postId) || postId <= 0 || !Number.isSafeInteger(revisionId) || revisionId <= 0) throw Error("Invalid revision id");
+    return json(siteUrl, "drafts/" + postId + "/revisions/" + revisionId, "GET", grant);
+  }
 }

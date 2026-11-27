@@ -1,4 +1,4 @@
-A to Z WordPress AI Manager 0.7.0
+A to Z WordPress AI Manager 0.8.0
 
 Default behavior
 ----------------
@@ -49,7 +49,7 @@ allowlist accepts only the configured API prefix on the staging subdomain.
 Draft endpoints and boundaries
 -----------------------------
 POST /wp-json/atoz-growth/v1/drafts/execute accepts only create_post_draft,
-create_page_draft, edit_draft or separately gated publish_draft. Backend permission must already be owner-checked,
+create_page_draft, edit_draft, restore_revision or separately gated publish_draft. Backend permission must already be owner-checked,
 explicitly approved, exact-payload-bound, expiring and single use. The plugin sends
 its own persistent site identity and canonical digest to the backend and requires
 literal authorization booleans and matching action ID/type/digest. A model cannot
@@ -63,8 +63,24 @@ grant. It never returns published/private/pending content through this endpoint.
 Title/content are raw display data; clients must escape text or use a reviewed
 preview renderer, never execute them as instructions.
 
-The canonical payload SHA256 is JSON in this order: title, content; edit adds
-post_id, post_type, expected_modified_gmt, expected_content_digest. Slash and Unicode
+Category and tag IDs and an existing image attachment ID are optional fields in
+the approved draft payload. The plugin validates taxonomy-specific assignment
+capabilities, term taxonomy, image MIME and attachment edit capability, then
+independently reads taxonomy IDs and featured-media ID back. It never uploads a
+new image. Omitted fields leave current assignments intact.
+
+GET /drafts/<id>/revisions and /drafts/<id>/revisions/<revision-id> require the
+same one-use grant bound to the parent draft. Restoration is a separate exact
+action bound to the current draft snapshot and a child revision ID/content
+digest. The plugin checks that source revision again inside the transaction,
+restores title/content only, preserves draft status, and verifies readback.
+Revisions belonging to another post or sources changed after approval are
+rejected.
+
+The canonical payload SHA256 is JSON in this order: title, content; edits add
+post_id, post_type, expected_modified_gmt, expected_content_digest; optional
+category_ids, tag_ids and featured_media_id follow; restoration adds
+revision_id and expected_revision_digest. Slash and Unicode
 characters are not escaped; Unicode line separators are preserved. Content digest
 is SHA256 of canonical JSON {title,content}. The second digest prevents same-second
 stale updates that a modified timestamp alone cannot detect.
